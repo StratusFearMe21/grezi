@@ -1,0 +1,26 @@
+[package]
+name = "grezi"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "grezi"
+
+[dependencies]
+ariadne = "*"
+chumsky = "*"
+memmap = "*"
+anyhow = "*"
+skia-safe = { version = "*", features = ["gl", "textlayout"] }
+once_cell = "*"
+glutin = "*"
+gl = "*"
+easing = { path = "../easing" }
+structopt = "*"
+tui = { version = "*", default-features = false }
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort"
