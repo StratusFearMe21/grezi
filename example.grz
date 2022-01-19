@@ -109,8 +109,8 @@ ThisIsAViewbox: Paragraph(value: "This is a viewbox");
 };
 
 ViewboxDescription: Paragraph(value: "A viewbox is a method
-of spliting the screen
-into multiple peices.
+of splitting the screen
+into multiple pieces.
 Viewboxes allow for
 the alignment of text
 and objects to be completely
@@ -128,7 +128,7 @@ the name of the
 viewbox itself
 we will use this
 name to reference
-it in our prsentation");
+it in our presentation");
 
 {
 	LetsLearn: SizeThirdAndTwo[0];....,
@@ -351,7 +351,7 @@ specify a corner
 or edge of the
 area that you
 specified that
-your objcet go");
+your object go");
 SlidesSix: Paragraph(value: "Some examples include:
 - From 'center center' to 'center center'
 - From 'center center' to 'top left'
@@ -435,7 +435,7 @@ SlidesEightExample: Paragraph(value: "{
 	SlidesEightExample: MoreSpace[1];....
 };
 
-Congrats: Header(value: "Congatioulations!");
+Congrats: Header(value: "Congratulations!");
 YourAMaster: Paragraph(value: "You're A Grezi Master!");
 
 {

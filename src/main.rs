@@ -66,6 +66,7 @@ fn main() -> anyhow::Result<()> {
         },
         opts.fps,
     )?;
+    println!("{}", std::mem::size_of_val(&slideshow));
     let winit_window = glutin::window::WindowBuilder::new()
         .with_title("Grezi")
         .with_fullscreen(Some(Fullscreen::Borderless(None)))
