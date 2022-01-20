@@ -428,7 +428,7 @@ checksum = "9ea835d29036a4087793836fa931b08837ad5e957da9e23886b29586fb9b6650"
 [[package]]
 name = "easing"
 version = "0.0.5"
-source = "git+https://github.com/StratusFearMe21/easing#0a08fdb887a93c9fe03433eb351c5b324e49afc8"
+source = "git+https://github.com/StratusFearMe21/easing#f62f3a17f33ba18ac8454d93bee5304a9d526517"
 dependencies = [
  "num-traits",
 ]
