@@ -7,11 +7,7 @@ use std::{collections::HashMap, iter::Zip};
 use anyhow::bail;
 use ariadne::{Label, Source};
 use chumsky::prelude::*;
-use layout::{Constraint, Layout};
-use skia_safe::{
-    textlayout::{FontCollection, ParagraphStyle, TextStyle},
-    Canvas, FontStyle, Rect, Typeface,
-};
+use layout::{Constraint, Layout, Rect};
 
 //--> Macros
 
@@ -24,32 +20,32 @@ use skia_safe::{
 macro_rules! get_pos {
     ($line_up:expr,$vbx:expr,$obj:expr) => {
         match $line_up {
-            LineUp::TopLeft => ($vbx.left, $vbx.top),
-            LineUp::TopRight => ($vbx.right - $obj.position.width(), $vbx.top),
-            LineUp::BottomLeft => ($vbx.left, $vbx.bottom - $obj.position.height()),
+            LineUp::TopLeft => ($vbx.left(), $vbx.top()),
+            LineUp::TopRight => ($vbx.right() - $obj.position.width, $vbx.top()),
+            LineUp::BottomLeft => ($vbx.left(), $vbx.bottom() - $obj.position.height),
             LineUp::BottomRight => (
-                $vbx.right - $obj.position.width(),
-                $vbx.bottom - $obj.position.height(),
+                $vbx.right() - $obj.position.width,
+                $vbx.bottom() - $obj.position.height,
             ),
             LineUp::CenterTop => (
-                ($vbx.left + $vbx.right) / 2.0 - ($obj.position.width() / 2.0),
-                $vbx.top,
+                ($vbx.left() + $vbx.right()) / 2.0 - ($obj.position.width / 2.0),
+                $vbx.top(),
             ),
             LineUp::CenterBottom => (
-                ($vbx.left + $vbx.right) / 2.0 - ($obj.position.width() / 2.0),
-                $vbx.bottom - $obj.position.height(),
+                ($vbx.left() + $vbx.right()) / 2.0 - ($obj.position.width / 2.0),
+                $vbx.bottom() - $obj.position.height,
             ),
             LineUp::CenterLeft => (
-                $vbx.left,
-                ($vbx.top + $vbx.bottom) / 2.0 - ($obj.position.height() / 2.0),
+                $vbx.left(),
+                ($vbx.top() + $vbx.bottom()) / 2.0 - ($obj.position.height / 2.0),
             ),
             LineUp::CenterRight => (
-                $vbx.right - $obj.position.width(),
-                ($vbx.top + $vbx.bottom) / 2.0 - ($obj.position.height() / 2.0),
+                $vbx.right() - $obj.position.width,
+                ($vbx.top() + $vbx.bottom()) / 2.0 - ($obj.position.height / 2.0),
             ),
             LineUp::CenterCenter => (
-                ($vbx.left + $vbx.right) / 2.0 - ($obj.position.width() / 2.0),
-                ($vbx.top + $vbx.bottom) / 2.0 - ($obj.position.height() / 2.0),
+                ($vbx.left() + $vbx.right()) / 2.0 - ($obj.position.width / 2.0),
+                ($vbx.top() + $vbx.bottom()) / 2.0 - ($obj.position.height / 2.0),
             ),
         }
     };
@@ -119,24 +115,20 @@ pub enum LineUp {
 }
 
 /// Commands are used to draw and move objects on the screen
-pub struct Cmd(
+pub struct Cmd<I: Iterator<Item = f64>>(
     /// The object to add
-    Object,
+    pub Object,
     /// Easing for (x, y, opacity)
-    Zip<Zip<easing::CubicInOut, easing::CubicInOut>, easing::CubicInOut>,
+    pub Zip<Zip<I, I>, I>,
 );
 
-impl Cmd {
+impl<I: Iterator<Item = f64>> Cmd<I> {
     /// Advance the object's easing functions
     pub fn step(&mut self) -> bool {
         if let Some(e) = self.1.next() {
-            self.0.position.set_xywh(
-                e.0 .0,
-                e.0 .1,
-                self.0.position.width(),
-                self.0.position.height(),
-            );
-            self.0.opacity = e.1;
+            self.0.position.x = e.0 .0;
+            self.0.position.y = e.0 .1;
+            self.0.opacity = e.1 as f32;
             true
         } else {
             false
@@ -178,9 +170,9 @@ pub struct Object {
 }
 
 /// A slide
-pub struct Slide(pub Vec<Cmd>);
+pub struct Slide<I: Iterator<Item = f64>>(pub Vec<Cmd<I>>);
 
-impl Slide {
+impl<I: Iterator<Item = f64>> Slide<I> {
     pub fn step(&mut self) -> bool {
         for f in self.0.iter_mut().map(|f| f.step()) {
             if !f {
@@ -188,58 +180,6 @@ impl Slide {
             }
         }
         true
-    }
-    pub fn draw(&self, canvas: &mut Canvas, collection: &FontCollection) {
-        for cmd in self.0.iter() {
-            match cmd {
-                Cmd(obj, _) => match &obj.obj_type {
-                    ObjectType::Text {
-                        value,
-                        font_size,
-                        font_family,
-                        alignment,
-                        max_width,
-                    } => {
-                        let typeface = Typeface::new(font_family, FontStyle::normal());
-                        let mut text_style = TextStyle::new();
-                        text_style
-                            .set_font_size(*font_size)
-                            .set_font_families(&[font_family])
-                            .set_typeface(typeface)
-                            .set_color(skia_safe::Color::from_argb(
-                                (obj.opacity * 255.0) as u8,
-                                255,
-                                255,
-                                255,
-                            ));
-                        let mut style = ParagraphStyle::new();
-                        style.set_text_align(*alignment).set_text_style(&text_style);
-                        let mut paragraph =
-                            skia_safe::textlayout::ParagraphBuilder::new(&style, collection);
-                        paragraph.add_text(value);
-                        let mut built = paragraph.build();
-                        built.layout(*max_width);
-                        built.paint(canvas, (obj.position.left, obj.position.top));
-                        #[cfg(debug_assertions)]
-                        {
-                            let paint = skia_safe::Paint::new(
-                                skia_safe::Color4f::new(1.0, 1.0, 0.5, 0.5),
-                                None,
-                            );
-                            canvas.draw_rect(obj.position, &paint);
-                            canvas.draw_circle((obj.position.left, obj.position.top), 20.0, &paint);
-                        }
-                    }
-                    _ => unimplemented!(),
-                },
-            }
-        }
-        #[cfg(debug_assertions)]
-        {
-            let paint = skia_safe::Paint::new(skia_safe::Color4f::new(1.0, 1.0, 0.5, 0.5), None);
-            canvas.draw_rect(skia_safe::Rect::from_xywh(955.0, 0.0, 10.0, 1080.0), &paint);
-            canvas.draw_rect(skia_safe::Rect::from_xywh(0.0, 535.0, 1920.0, 10.0), &paint);
-        }
     }
 }
 
@@ -287,14 +227,16 @@ fn fold_lineup(line_up: (LineUpGeneral, LineUpGeneral)) -> LineUp {
 
 //--> Public Functions
 
-pub fn file_to_tokens<F>(
+pub fn file_to_tokens<F, I: Iterator<Item = f64>, E>(
     file: &[u8],
-    size_tui: layout::Rect,
+    size: Rect,
     bounds_fn: F,
-    fps: u64,
-) -> anyhow::Result<Vec<Slide>>
+    easing_fn: E,
+    delay: u64,
+) -> anyhow::Result<Vec<Slide<I>>>
 where
     F: Fn(&String, f32, &String, skia_safe::textlayout::TextAlign) -> anyhow::Result<(f32, f32)>,
+    E: Fn(f64, f64, u64) -> I,
 {
     let mut layouts_raw: HashMap<String, Vec<Rect>> = HashMap::new();
     let layouts: *mut HashMap<String, Vec<Rect>> = &mut layouts_raw as *mut _;
@@ -303,14 +245,9 @@ where
     let mut objects_in_view_raw: HashMap<String, (*mut Object, Rect)> = HashMap::new();
     let objects_in_view: *mut HashMap<String, (*mut Object, Rect)> =
         &mut objects_in_view_raw as *mut _;
-    let mut slides: Vec<Slide> = Vec::new();
-    let slides_ptr: *mut Vec<Slide> = &mut slides as *mut _;
-    let size = Rect {
-        left: size_tui.left(),
-        right: size_tui.right(),
-        top: size_tui.top(),
-        bottom: size_tui.bottom(),
-    };
+    let mut slides: Vec<Slide<I>> = Vec::new();
+    let slides_ptr: *mut Vec<Slide<I>> = &mut slides as *mut _;
+
     let str_parser = filter(|c| *c != b'"')
         .repeated()
         .padded_by(just(b'\"'))
@@ -389,14 +326,9 @@ where
                             .direction(direction)
                             .constraints(constraints.as_ref())
                             .split(if let Some(rect) = unsafe { &mut *layouts }.get(&split) {
-                                layout::Rect {
-                                    x: rect[split_index].left,
-                                    y: rect[split_index].top,
-                                    width: rect[split_index].width(),
-                                    height: rect[split_index].height(),
-                                }
+                                rect[split_index]
                             } else if split == "Size" {
-                                size_tui
+                                size
                             } else {
                                 return Err(Simple::custom(
                                         span,
@@ -407,12 +339,6 @@ where
                             name,
                             rects
                             .into_iter()
-                            .map(|f| Rect {
-                                left: f.left(),
-                                top: f.top(),
-                                right: f.right(),
-                                bottom: f.bottom(),
-                            })
                             .collect(),
                             );
                         Ok(())
@@ -431,12 +357,12 @@ where
                                     "Paragraph" | "paragraph" | "PP" | "pp" | "P" | "p" => {
                                         let value =
                                             match values
-                                            .remove("value") 
+                                            .remove("value")
                                             {
                                                 Some(val) => val,
                                                 None => return Err(Simple::custom(span, format!("A value is required for your text, try adding one\n{}: {}(value: \"Your Text\");", name, type_)))
                                             }
-                                            ;
+                                        ;
                                         let font_family = values
                                             .remove("font_family")
                                             .unwrap_or(String::from("Helvetica"));
@@ -466,10 +392,10 @@ where
                                                 max_width: bounds.0,
                                             },
                                             position: Rect {
-                                                left: 0.0,
-                                                top: 0.0,
-                                                right: bounds.0,
-                                                bottom: bounds.1,
+                                                x: 0.0,
+                                                y: 0.0,
+                                                width: bounds.0 as f64,
+                                                height: bounds.1 as f64,
                                             },
                                             opacity: 0.0,
                                         }
@@ -477,7 +403,7 @@ where
                                     "Header" | "header" | "NH" | "nh" | "SH" | "sh" | "H" | "h" => {
                                         let value =
                                             match values
-                                            .remove("value") 
+                                            .remove("value")
                                             {
                                                 Some(val) => val,
                                                 None => return Err(Simple::custom(span, format!("A value is required for your text, try adding one\n{}: {}(value: \"Your Text\");", name, type_)))
@@ -513,10 +439,10 @@ where
                                                 max_width: bounds.0,
                                             },
                                             position: Rect {
-                                                left: 0.0,
-                                                top: 0.0,
-                                                right: bounds.0,
-                                                bottom: bounds.1,
+                                                x: 0.0,
+                                                y: 0.0,
+                                                width: bounds.0 as f64,
+                                                height: bounds.1 as f64,
                                             },
                                             opacity: 0.0,
                                         }
@@ -525,10 +451,10 @@ where
                                         Object {
                                             obj_type: ObjectType::Point,
                                             position: Rect {
-                                                left: 0.0,
-                                                right: 0.0,
-                                                top: 0.0,
-                                                bottom: 0.0,
+                                                x: 0.0,
+                                                y: 0.0,
+                                                width: 0.0,
+                                                height: 0.0,
                                             },
                                             opacity: 0.0,
                                         }
@@ -576,13 +502,9 @@ where
                     obj.1 = vbx;
                     new_slide.0.push(Cmd(
                         (*(obj.0)).clone(),
-                        easing::cubic_inout(pos_rect_from.0, pos_rect_goto.0, fps / 2)
-                            .zip(easing::cubic_inout(
-                                pos_rect_from.1,
-                                pos_rect_goto.1,
-                                fps / 2,
-                            ))
-                            .zip(easing::cubic_inout(1.0, 1.0, fps / 2)),
+                        easing_fn(pos_rect_from.0, pos_rect_goto.0, delay)
+                            .zip(easing_fn(pos_rect_from.1, pos_rect_goto.1, delay))
+                            .zip(easing_fn(1.0, 1.0, delay)),
                     ));
                     modified_names.push(name);
                 } else {
@@ -599,13 +521,9 @@ where
                     let pos_rect_goto = get_pos!(goto, vbx, obj);
                     new_slide.0.push(Cmd(
                         obj.clone(),
-                        easing::cubic_inout(pos_rect_from.0, pos_rect_goto.0, fps / 2)
-                            .zip(easing::cubic_inout(
-                                pos_rect_from.1,
-                                pos_rect_goto.1,
-                                fps / 2,
-                            ))
-                            .zip(easing::cubic_inout(0.0, 1.0, fps / 2)),
+                        easing_fn(pos_rect_from.0, pos_rect_goto.0, delay)
+                            .zip(easing_fn(pos_rect_from.1, pos_rect_goto.1, delay))
+                            .zip(easing_fn(0.0, 1.0, delay)),
                     ));
                     modified_names.push(name.clone());
                     match new_slide.0.last_mut() {

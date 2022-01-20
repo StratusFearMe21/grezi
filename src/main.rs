@@ -9,20 +9,26 @@ use glutin::{
     window::Fullscreen,
 };
 use glutin::{event_loop::EventLoop, ContextBuilder};
-use grezi::layout::Rect;
+use grezi::{layout::Rect, ObjectType, Slide};
 use skia_render::SkiaRenderer;
 use skia_safe::{
     textlayout::{FontCollection, ParagraphStyle, TextStyle},
-    Color4f, Font, FontMgr, FontStyle, Typeface,
+    Canvas, Color4f, Font, FontMgr, FontStyle, Typeface,
 };
 use structopt::StructOpt;
 
 #[derive(StructOpt)]
 struct Opts {
     #[structopt(short = "r", long, default_value = "60")]
-    fps: u64,
+    /// The fps to render the slideshow at
+    fps: f64,
+    #[structopt(short, long, default_value = "0.5")]
+    /// The delay between slides in seconds
+    delay: f64,
     #[structopt(short, long)]
+    /// Active VSYNC
     vsync: bool,
+    /// The file for Grezi to open
     file: String,
 }
 
@@ -35,9 +41,9 @@ fn main() -> anyhow::Result<()> {
         x: 0.0,
         y: 0.0,
         // windowed_context.window().inner_size().width as u16
-        width: monitor_size.width as f32,
+        width: monitor_size.width as f64,
         // dbg!(windowed_context.window().inner_size().height) as u16
-        height: monitor_size.height as f32,
+        height: monitor_size.height as f64,
     };
     let mut font_mgr = FontCollection::new();
     font_mgr.set_default_font_manager(FontMgr::default(), None);
@@ -66,7 +72,8 @@ fn main() -> anyhow::Result<()> {
             built.layout(width + 10.0);
             Ok((built.max_width(), built.height()))
         },
-        opts.fps,
+        easing::cubic_inout,
+        (opts.fps * opts.delay) as u64,
     )?;
     let winit_window = glutin::window::WindowBuilder::new()
         .with_title("Grezi")
@@ -139,7 +146,7 @@ fn main() -> anyhow::Result<()> {
                 {
                     let canvas = skia.canvas();
                     canvas.clear(Color4f::new(0.39, 0.39, 0.39, 1.0));
-                    slideshow[index].draw(canvas, &font_mgr);
+                    draw(&slideshow[index], canvas, &font_mgr);
                 }
                 skia.flush();
                 windowed_context.swap_buffers().unwrap();
@@ -154,7 +161,7 @@ fn main() -> anyhow::Result<()> {
                 let canvas = skia.canvas();
                 canvas.clear(Color4f::new(0.39, 0.39, 0.39, 1.0));
                 drawing = slideshow[index].step();
-                slideshow[index].draw(canvas, &font_mgr);
+                draw(&slideshow[index], canvas, &font_mgr);
                 skia.flush();
                 windowed_context.swap_buffers().unwrap();
             }
@@ -163,4 +170,55 @@ fn main() -> anyhow::Result<()> {
 
         *control_flow = ControlFlow::WaitUntil(previous_frame_start + frame_duration)
     });
+}
+
+pub fn draw<I: Iterator<Item = f64>>(
+    slide: &Slide<I>,
+    canvas: &mut Canvas,
+    collection: &FontCollection,
+) {
+    for cmd in slide.0.iter() {
+        match cmd {
+            grezi::Cmd(obj, _) => match &obj.obj_type {
+                ObjectType::Text {
+                    value,
+                    font_size,
+                    font_family,
+                    alignment,
+                    max_width,
+                } => {
+                    let typeface = Typeface::new(font_family, FontStyle::normal());
+                    let mut text_style = TextStyle::new();
+                    text_style
+                        .set_font_size(*font_size)
+                        .set_font_families(&[font_family])
+                        .set_typeface(typeface)
+                        .set_color(skia_safe::Color::from_argb(
+                            (obj.opacity * 255.0) as u8,
+                            255,
+                            255,
+                            255,
+                        ));
+                    let mut style = ParagraphStyle::new();
+                    style.set_text_align(*alignment).set_text_style(&text_style);
+                    let mut paragraph =
+                        skia_safe::textlayout::ParagraphBuilder::new(&style, collection);
+                    paragraph.add_text(value);
+                    let mut built = paragraph.build();
+                    built.layout(*max_width);
+                    built.paint(
+                        canvas,
+                        (obj.position.left() as f32, obj.position.top() as f32),
+                    );
+                }
+                _ => unimplemented!(),
+            },
+        }
+    }
+    #[cfg(debug_assertions)]
+    {
+        let paint = skia_safe::Paint::new(skia_safe::Color4f::new(1.0, 1.0, 0.5, 0.5), None);
+        canvas.draw_rect(skia_safe::Rect::from_xywh(955.0, 0.0, 10.0, 1080.0), &paint);
+        canvas.draw_rect(skia_safe::Rect::from_xywh(0.0, 535.0, 1920.0, 10.0), &paint);
+    }
 }

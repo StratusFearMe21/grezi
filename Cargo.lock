@@ -428,7 +428,8 @@ checksum = "9ea835d29036a4087793836fa931b08837ad5e957da9e23886b29586fb9b6650"
 [[package]]
 name = "easing"
 version = "0.0.5"
-source = "git+https://github.com/StratusFearMe21/easing#e60b394b80f28b3a8c0342d31bfc6e2b9d881d39"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "90b1cf8d2e9df96a3ae5f37e2bad2532f6aab61207fbad9a3c54da09d9df5f3f"
 
 [[package]]
 name = "either"
