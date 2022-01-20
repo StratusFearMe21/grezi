@@ -19,8 +19,10 @@ use tui::layout::Rect;
 
 #[derive(StructOpt)]
 struct Opts {
-    #[structopt(short = "r", default_value = "60")]
+    #[structopt(short = "r", long, default_value = "60")]
     fps: u64,
+    #[structopt(short, long)]
+    vsync: bool,
     file: String,
 }
 
@@ -66,7 +68,6 @@ fn main() -> anyhow::Result<()> {
         },
         opts.fps,
     )?;
-    println!("{}", std::mem::size_of_val(&slideshow));
     let winit_window = glutin::window::WindowBuilder::new()
         .with_title("Grezi")
         .with_fullscreen(Some(Fullscreen::Borderless(None)))
@@ -75,7 +76,7 @@ fn main() -> anyhow::Result<()> {
         .with_pixel_format(24, 8)
         .with_stencil_buffer(8)
         .with_gl_profile(glutin::GlProfile::Core)
-        .with_vsync(false)
+        .with_vsync(opts.vsync)
         .build_windowed(winit_window, &event_loop)?;
     let windowed_context = unsafe { windowed_context.make_current().unwrap() };
     let mut skia = SkiaRenderer::new(&windowed_context);
