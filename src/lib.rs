@@ -8,7 +8,7 @@ use anyhow::bail;
 use ariadne::{Label, Source};
 use chumsky::prelude::*;
 use layout::{Constraint, Layout, Rect};
-use num_traits::{FromPrimitive, Num, NumAssignOps, ToPrimitive};
+use num_traits::{NumAssignOps, One, ToPrimitive, Zero};
 
 //--> Macros
 
@@ -231,7 +231,7 @@ fn fold_lineup(line_up: (LineUpGeneral, LineUpGeneral)) -> LineUp {
 pub fn file_to_tokens<
     F,
     G,
-    U: Num + FromPrimitive + ToPrimitive + NumAssignOps + PartialOrd + Copy,
+    U: ToPrimitive + One + Zero + NumAssignOps + PartialOrd + Copy,
     I: Iterator<Item = f64>,
     O: Iterator<Item = f32>,
     E,
