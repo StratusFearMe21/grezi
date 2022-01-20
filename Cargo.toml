@@ -16,7 +16,8 @@ skia-safe = { version = "*", features = ["gl", "textlayout"] }
 once_cell = "*"
 glutin = "*"
 gl = "*"
-easing = { version = "*" }
+easing = { git = "https://github.com/StratusFearMe21/easing" }
+num-traits = "*"
 structopt = "*"
 cassowary = "*"
 

@@ -73,7 +73,8 @@ fn main() -> anyhow::Result<()> {
             Ok((built.max_width(), built.height()))
         },
         easing::cubic_inout,
-        (opts.fps * opts.delay) as u64,
+        easing::cubic_inout,
+        opts.fps * opts.delay,
     )?;
     let winit_window = glutin::window::WindowBuilder::new()
         .with_title("Grezi")
@@ -154,7 +155,7 @@ fn main() -> anyhow::Result<()> {
 
             _ => (),
         }
-        let frame_duration = Duration::from_secs_f32(1.0 / opts.fps as f32);
+        let frame_duration = Duration::from_secs_f64(1.0 / opts.fps);
 
         if frame_start - previous_frame_start > frame_duration {
             if drawing {
@@ -172,8 +173,8 @@ fn main() -> anyhow::Result<()> {
     });
 }
 
-pub fn draw<I: Iterator<Item = f64>>(
-    slide: &Slide<I>,
+pub fn draw<I: Iterator<Item = f64>, O: Iterator<Item = f32>>(
+    slide: &Slide<I, O>,
     canvas: &mut Canvas,
     collection: &FontCollection,
 ) {

@@ -8,6 +8,7 @@ use anyhow::bail;
 use ariadne::{Label, Source};
 use chumsky::prelude::*;
 use layout::{Constraint, Layout, Rect};
+use num_traits::{FromPrimitive, Num, NumAssignOps, ToPrimitive};
 
 //--> Macros
 
@@ -115,20 +116,20 @@ pub enum LineUp {
 }
 
 /// Commands are used to draw and move objects on the screen
-pub struct Cmd<I: Iterator<Item = f64>>(
+pub struct Cmd<I: Iterator<Item = f64>, O: Iterator<Item = f32>>(
     /// The object to add
     pub Object,
     /// Easing for (x, y, opacity)
-    pub Zip<Zip<I, I>, I>,
+    pub Zip<Zip<I, I>, O>,
 );
 
-impl<I: Iterator<Item = f64>> Cmd<I> {
+impl<I: Iterator<Item = f64>, O: Iterator<Item = f32>> Cmd<I, O> {
     /// Advance the object's easing functions
     pub fn step(&mut self) -> bool {
         if let Some(e) = self.1.next() {
             self.0.position.x = e.0 .0;
             self.0.position.y = e.0 .1;
-            self.0.opacity = e.1 as f32;
+            self.0.opacity = e.1;
             true
         } else {
             false
@@ -170,9 +171,9 @@ pub struct Object {
 }
 
 /// A slide
-pub struct Slide<I: Iterator<Item = f64>>(pub Vec<Cmd<I>>);
+pub struct Slide<I: Iterator<Item = f64>, O: Iterator<Item = f32>>(pub Vec<Cmd<I, O>>);
 
-impl<I: Iterator<Item = f64>> Slide<I> {
+impl<I: Iterator<Item = f64>, O: Iterator<Item = f32>> Slide<I, O> {
     pub fn step(&mut self) -> bool {
         for f in self.0.iter_mut().map(|f| f.step()) {
             if !f {
@@ -227,16 +228,25 @@ fn fold_lineup(line_up: (LineUpGeneral, LineUpGeneral)) -> LineUp {
 
 //--> Public Functions
 
-pub fn file_to_tokens<F, I: Iterator<Item = f64>, E>(
+pub fn file_to_tokens<
+    F,
+    G,
+    U: Num + FromPrimitive + ToPrimitive + NumAssignOps + PartialOrd + Copy,
+    I: Iterator<Item = f64>,
+    O: Iterator<Item = f32>,
+    E,
+>(
     file: &[u8],
     size: Rect,
     bounds_fn: F,
+    opacity_fn: G,
     easing_fn: E,
-    delay: u64,
-) -> anyhow::Result<Vec<Slide<I>>>
+    delay: U,
+) -> anyhow::Result<Vec<Slide<I, O>>>
 where
     F: Fn(&String, f32, &String, skia_safe::textlayout::TextAlign) -> anyhow::Result<(f32, f32)>,
-    E: Fn(f64, f64, u64) -> I,
+    E: Fn(f64, f64, U) -> I,
+    G: Fn(f32, f32, U) -> O,
 {
     let mut layouts_raw: HashMap<String, Vec<Rect>> = HashMap::new();
     let layouts: *mut HashMap<String, Vec<Rect>> = &mut layouts_raw as *mut _;
@@ -245,8 +255,8 @@ where
     let mut objects_in_view_raw: HashMap<String, (*mut Object, Rect)> = HashMap::new();
     let objects_in_view: *mut HashMap<String, (*mut Object, Rect)> =
         &mut objects_in_view_raw as *mut _;
-    let mut slides: Vec<Slide<I>> = Vec::new();
-    let slides_ptr: *mut Vec<Slide<I>> = &mut slides as *mut _;
+    let mut slides: Vec<Slide<I, O>> = Vec::new();
+    let slides_ptr: *mut Vec<Slide<I, O>> = &mut slides as *mut _;
 
     let str_parser = filter(|c| *c != b'"')
         .repeated()
@@ -504,7 +514,7 @@ where
                         (*(obj.0)).clone(),
                         easing_fn(pos_rect_from.0, pos_rect_goto.0, delay)
                             .zip(easing_fn(pos_rect_from.1, pos_rect_goto.1, delay))
-                            .zip(easing_fn(1.0, 1.0, delay)),
+                            .zip(opacity_fn(1.0f32, 1.0f32, delay)),
                     ));
                     modified_names.push(name);
                 } else {
@@ -523,7 +533,7 @@ where
                         obj.clone(),
                         easing_fn(pos_rect_from.0, pos_rect_goto.0, delay)
                             .zip(easing_fn(pos_rect_from.1, pos_rect_goto.1, delay))
-                            .zip(easing_fn(0.0, 1.0, delay)),
+                            .zip(opacity_fn(0.0f32, 1.0f32, delay)),
                     ));
                     modified_names.push(name.clone());
                     match new_slide.0.last_mut() {
