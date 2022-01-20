@@ -9,13 +9,13 @@ use glutin::{
     window::Fullscreen,
 };
 use glutin::{event_loop::EventLoop, ContextBuilder};
+use grezi::layout::Rect;
 use skia_render::SkiaRenderer;
 use skia_safe::{
     textlayout::{FontCollection, ParagraphStyle, TextStyle},
     Color4f, Font, FontMgr, FontStyle, Typeface,
 };
 use structopt::StructOpt;
-use tui::layout::Rect;
 
 #[derive(StructOpt)]
 struct Opts {
@@ -32,12 +32,12 @@ fn main() -> anyhow::Result<()> {
     let event_loop = EventLoop::new();
     let monitor_size = event_loop.primary_monitor().unwrap().size();
     let size = Rect {
-        x: 0,
-        y: 0,
+        x: 0.0,
+        y: 0.0,
         // windowed_context.window().inner_size().width as u16
-        width: monitor_size.width as u16,
+        width: monitor_size.width as f32,
         // dbg!(windowed_context.window().inner_size().height) as u16
-        height: monitor_size.height as u16,
+        height: monitor_size.height as f32,
     };
     let mut font_mgr = FontCollection::new();
     font_mgr.set_default_font_manager(FontMgr::default(), None);

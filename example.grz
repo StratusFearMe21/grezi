@@ -17,7 +17,7 @@ BottomReasonsTwo: VerticalViewbox[1] >
 ];
 
 Title: Header(value: "Grezi!");
-Information: Paragraph(value: "A cool program by Isaac Mills!");
+Information: Paragraph(value: "Very Cool");
 
 {
 	Title: VerticalViewbox[0];__..,

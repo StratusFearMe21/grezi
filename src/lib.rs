@@ -1,15 +1,17 @@
 //--> Use statements
 
+pub mod layout;
+
 use std::{collections::HashMap, iter::Zip};
 
-use anyhow::{bail, Context};
+use anyhow::bail;
 use ariadne::{Label, Source};
 use chumsky::prelude::*;
+use layout::{Constraint, Layout};
 use skia_safe::{
     textlayout::{FontCollection, ParagraphStyle, TextStyle},
     Canvas, FontStyle, Rect, Typeface,
 };
-use tui::layout::{Constraint, Layout};
 
 //--> Macros
 
@@ -57,7 +59,7 @@ macro_rules! get_pos {
 
 /// A method of splitting the screen a certain way
 type Viewbox = (
-    (((String, String), usize), tui::layout::Direction),
+    (((String, String), usize), layout::Direction),
     Vec<Constraint>,
 );
 
@@ -287,7 +289,7 @@ fn fold_lineup(line_up: (LineUpGeneral, LineUpGeneral)) -> LineUp {
 
 pub fn file_to_tokens<F>(
     file: &[u8],
-    size_tui: tui::layout::Rect,
+    size_tui: layout::Rect,
     bounds_fn: F,
     fps: u64,
 ) -> anyhow::Result<Vec<Slide>>
@@ -304,10 +306,10 @@ where
     let mut slides: Vec<Slide> = Vec::new();
     let slides_ptr: *mut Vec<Slide> = &mut slides as *mut _;
     let size = Rect {
-        left: size_tui.left() as f32,
-        right: size_tui.right() as f32,
-        top: size_tui.top() as f32,
-        bottom: size_tui.bottom() as f32,
+        left: size_tui.left(),
+        right: size_tui.right(),
+        top: size_tui.top(),
+        bottom: size_tui.bottom(),
     };
     let str_parser = filter(|c| *c != b'"')
         .repeated()
@@ -348,8 +350,8 @@ where
         .then(index_parser.padded())
         .then(
             just(b"^")
-            .to(tui::layout::Direction::Vertical)
-            .or(just(b">").to(tui::layout::Direction::Horizontal))
+            .to(layout::Direction::Vertical)
+            .or(just(b">").to(layout::Direction::Horizontal))
             .padded(),
             )
         .then(
@@ -383,15 +385,15 @@ where
                 .try_map(
                     |((((name, split), split_index), direction), constraints), span| {
                         let rects = Layout::default()
-                            .margin(25)
+                            .margin(25.0)
                             .direction(direction)
                             .constraints(constraints.as_ref())
                             .split(if let Some(rect) = unsafe { &mut *layouts }.get(&split) {
-                                tui::layout::Rect {
-                                    x: rect[split_index].left as u16,
-                                    y: rect[split_index].top as u16,
-                                    width: rect[split_index].width() as u16,
-                                    height: rect[split_index].height() as u16,
+                                layout::Rect {
+                                    x: rect[split_index].left,
+                                    y: rect[split_index].top,
+                                    width: rect[split_index].width(),
+                                    height: rect[split_index].height(),
                                 }
                             } else if split == "Size" {
                                 size_tui
@@ -406,10 +408,10 @@ where
                             rects
                             .into_iter()
                             .map(|f| Rect {
-                                left: f.left() as f32,
-                                top: f.top() as f32,
-                                right: f.right() as f32,
-                                bottom: f.bottom() as f32,
+                                left: f.left(),
+                                top: f.top(),
+                                right: f.right(),
+                                bottom: f.bottom(),
                             })
                             .collect(),
                             );
@@ -428,10 +430,12 @@ where
                                 let obj = match type_.as_str() {
                                     "Paragraph" | "paragraph" | "PP" | "pp" | "P" | "p" => {
                                         let value =
-                                            values
-                                            .remove("value")
-                                            .with_context(|| format!("A value is required for your text, try adding one\n{}: {}(value: \"Your Text\");", name, type_))
-                                            .unwrap()
+                                            match values
+                                            .remove("value") 
+                                            {
+                                                Some(val) => val,
+                                                None => return Err(Simple::custom(span, format!("A value is required for your text, try adding one\n{}: {}(value: \"Your Text\");", name, type_)))
+                                            }
                                             ;
                                         let font_family = values
                                             .remove("font_family")
@@ -472,10 +476,12 @@ where
                                     }
                                     "Header" | "header" | "NH" | "nh" | "SH" | "sh" | "H" | "h" => {
                                         let value =
-                                            values
-                                            .remove("value")
-                                            .with_context(|| format!("A value is required for your text, try adding one\n{}: {}(value: \"Your Text\");", name, type_))
-                                            .unwrap();
+                                            match values
+                                            .remove("value") 
+                                            {
+                                                Some(val) => val,
+                                                None => return Err(Simple::custom(span, format!("A value is required for your text, try adding one\n{}: {}(value: \"Your Text\");", name, type_)))
+                                            };
                                         let font_family =
                                             values
                                             .remove("font_family")
@@ -550,7 +556,7 @@ where
         .allow_trailing()
         .padded()
         .delimited_by(b'{', b'}')
-        .map(|cmds| unsafe {
+        .try_map(|cmds, span| unsafe {
             let mut new_slide = Slide(Vec::with_capacity(cmds.len()));
             let mut modified_names: Vec<String> = Vec::with_capacity(cmds.len());
             for (((name, split), split_index), (from, goto)) in cmds.into_iter() {
@@ -559,7 +565,10 @@ where
                 } else if split == "Size" {
                     size
                 } else {
-                    panic!("Could not find viewbox {split}")
+                    return Err(Simple::custom(
+                        span,
+                        format!("Could not find viewbox {split}"),
+                    ));
                 };
                 if let Some(obj) = (&mut *objects_in_view).get_mut(&name) {
                     let pos_rect_from = get_pos!(from, obj.1, *obj.0);
@@ -577,10 +586,15 @@ where
                     ));
                     modified_names.push(name);
                 } else {
-                    let obj = (*unused_objects)
-                        .get(&name)
-                        .with_context(|| format!("Could not find object {name}"))
-                        .unwrap();
+                    let obj = match (*unused_objects).get(&name) {
+                        Some(obj) => obj,
+                        None => {
+                            return Err(Simple::custom(
+                                span,
+                                format!("Could not find object {name}"),
+                            ))
+                        }
+                    };
                     let pos_rect_from = get_pos!(from, vbx, obj);
                     let pos_rect_goto = get_pos!(goto, vbx, obj);
                     new_slide.0.push(Cmd(
@@ -604,12 +618,14 @@ where
             }
             (&mut *objects_in_view).retain(|k, _| modified_names.contains(&k));
             (&mut *slides_ptr).push(new_slide);
+            Ok(())
         })
         .or(obj_viewbox_parser)
         .padded()
         .separated_by(just(b';'))
         .allow_trailing()
         .padded()
+        .ignored()
         .then_ignore(end());
     match lexer.parse(file) {
         Ok(_) => Ok(slides),

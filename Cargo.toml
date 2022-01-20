@@ -19,6 +19,7 @@ gl = "*"
 easing = { git = "https://github.com/StratusFearMe21/easing" }
 structopt = "*"
 tui = { version = "*", default-features = false }
+cassowary = "*"
 
 [profile.release]
 lto = "fat"

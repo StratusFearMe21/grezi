@@ -619,6 +619,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "ariadne",
+ "cassowary",
  "chumsky",
  "easing",
  "gl",
