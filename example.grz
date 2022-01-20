@@ -30,7 +30,7 @@ WhyGrezi: Header(value: "Why Grezi?");
 	WhyGrezi: Size[0];^^..
 };
 
-WhyInfoOne: Paragraph (value: "Faster");
+WhyInfoOne: Paragraph(value: "Faster");
 WhyInfoTwo: Paragraph(value: "Better");
 WhyInfoThree: Paragraph(value: "Free");
 

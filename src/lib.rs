@@ -533,7 +533,7 @@ where
                                             opacity: 0.0,
                                         }
                                     }
-                                    e => panic!("Object cannot have type {}", e),
+                                    e => return Err(Simple::custom(span, format!("Object cannot have type {}", e))),
                                 };
                                 unsafe { &mut *unused_objects }.insert(
                                     name,
