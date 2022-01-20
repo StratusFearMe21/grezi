@@ -38,12 +38,12 @@ fn main() -> anyhow::Result<()> {
     let event_loop = EventLoop::new();
     let monitor_size = event_loop.primary_monitor().unwrap().size();
     let size = Rect {
-        x: 0.0,
-        y: 0.0,
+        left: 0.0,
+        top: 0.0,
         // windowed_context.window().inner_size().width as u16
-        width: monitor_size.width as f64,
+        right: monitor_size.width as f64,
         // dbg!(windowed_context.window().inner_size().height) as u16
-        height: monitor_size.height as f64,
+        bottom: monitor_size.height as f64,
     };
     let mut font_mgr = FontCollection::new();
     font_mgr.set_default_font_manager(FontMgr::default(), None);
@@ -207,10 +207,7 @@ pub fn draw<I: Iterator<Item = f64>, O: Iterator<Item = f32>>(
                     paragraph.add_text(value);
                     let mut built = paragraph.build();
                     built.layout(*max_width);
-                    built.paint(
-                        canvas,
-                        (obj.position.left() as f32, obj.position.top() as f32),
-                    );
+                    built.paint(canvas, (obj.position.left as f32, obj.position.top as f32));
                 }
                 _ => unimplemented!(),
             },

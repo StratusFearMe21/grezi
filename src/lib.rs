@@ -16,37 +16,37 @@ use num_traits::{NumAssignOps, One, ToPrimitive, Zero};
 /// A macro for converting a lineup value, a viewbox and an object to a pair of x, y coordinates.
 /// Equivalent to
 /// ```
-/// fn get_pos(line_up: LineUp, vbx: tui::Rect, obj: Object) -> (u16, u16)
+/// fn get_pos(line_up: grezi::LineUp, vbx: grezi::layout::Rect, obj: grezi::Object) -> (u16, u16) {}
 /// ```
 macro_rules! get_pos {
     ($line_up:expr,$vbx:expr,$obj:expr) => {
         match $line_up {
-            LineUp::TopLeft => ($vbx.left(), $vbx.top()),
-            LineUp::TopRight => ($vbx.right() - $obj.position.width, $vbx.top()),
-            LineUp::BottomLeft => ($vbx.left(), $vbx.bottom() - $obj.position.height),
+            LineUp::TopLeft => ($vbx.left, $vbx.top),
+            LineUp::TopRight => ($vbx.right - $obj.position.width(), $vbx.top),
+            LineUp::BottomLeft => ($vbx.left, $vbx.bottom - $obj.position.height()),
             LineUp::BottomRight => (
-                $vbx.right() - $obj.position.width,
-                $vbx.bottom() - $obj.position.height,
+                $vbx.right - $obj.position.width(),
+                $vbx.bottom - $obj.position.height(),
             ),
             LineUp::CenterTop => (
-                ($vbx.left() + $vbx.right()) / 2.0 - ($obj.position.width / 2.0),
-                $vbx.top(),
+                ($vbx.left + $vbx.right) / 2.0 - ($obj.position.width() / 2.0),
+                $vbx.top,
             ),
             LineUp::CenterBottom => (
-                ($vbx.left() + $vbx.right()) / 2.0 - ($obj.position.width / 2.0),
-                $vbx.bottom() - $obj.position.height,
+                ($vbx.left + $vbx.right) / 2.0 - ($obj.position.width() / 2.0),
+                $vbx.bottom - $obj.position.height(),
             ),
             LineUp::CenterLeft => (
-                $vbx.left(),
-                ($vbx.top() + $vbx.bottom()) / 2.0 - ($obj.position.height / 2.0),
+                $vbx.left,
+                ($vbx.top + $vbx.bottom) / 2.0 - ($obj.position.height() / 2.0),
             ),
             LineUp::CenterRight => (
-                $vbx.right() - $obj.position.width,
-                ($vbx.top() + $vbx.bottom()) / 2.0 - ($obj.position.height / 2.0),
+                $vbx.right - $obj.position.width(),
+                ($vbx.top + $vbx.bottom) / 2.0 - ($obj.position.height() / 2.0),
             ),
             LineUp::CenterCenter => (
-                ($vbx.left() + $vbx.right()) / 2.0 - ($obj.position.width / 2.0),
-                ($vbx.top() + $vbx.bottom()) / 2.0 - ($obj.position.height / 2.0),
+                ($vbx.left + $vbx.right) / 2.0 - ($obj.position.width() / 2.0),
+                ($vbx.top + $vbx.bottom) / 2.0 - ($obj.position.height() / 2.0),
             ),
         }
     };
@@ -127,8 +127,12 @@ impl<I: Iterator<Item = f64>, O: Iterator<Item = f32>> Cmd<I, O> {
     /// Advance the object's easing functions
     pub fn step(&mut self) -> bool {
         if let Some(e) = self.1.next() {
-            self.0.position.x = e.0 .0;
-            self.0.position.y = e.0 .1;
+            let width = self.0.position.width();
+            let height = self.0.position.height();
+            self.0.position.left = e.0 .0;
+            self.0.position.top = e.0 .1;
+            self.0.position.right = e.0 .0 + width;
+            self.0.position.bottom = e.0 .1 + height;
             self.0.opacity = e.1;
             true
         } else {
@@ -297,187 +301,195 @@ where
         .then(index_parser.padded())
         .then(
             just(b"^")
-            .to(layout::Direction::Vertical)
-            .or(just(b">").to(layout::Direction::Horizontal))
-            .padded(),
-            )
+                .to(layout::Direction::Vertical)
+                .or(just(b">").to(layout::Direction::Horizontal))
+                .padded(),
+        )
         .then(
             int_parser
-            .from_str()
-            .unwrapped()
-            .then_ignore(just(b':'))
-            .then(int_parser.from_str().unwrapped())
-            .map(|(f, g)| Constraint::Ratio(f, g))
-            .or(int_parser
                 .from_str()
                 .unwrapped()
-                .then_ignore(just(b'%'))
-                .map(Constraint::Percentage))
-            .or(int_parser
-                .from_str()
-                .unwrapped()
-                .then_ignore(just(b'+'))
-                .map(Constraint::Max))
-            .or(int_parser
-                .from_str()
-                .unwrapped()
-                .then_ignore(just(b'-'))
-                .map(Constraint::Min))
-            .or(int_parser.from_str().unwrapped().map(Constraint::Length))
-            .padded()
-            .separated_by(just(b','))
-            .allow_trailing(),
+                .then_ignore(just(b':'))
+                .then(int_parser.from_str().unwrapped())
+                .map(|(f, g)| Constraint::Ratio(f, g))
+                .or(int_parser
+                    .from_str()
+                    .unwrapped()
+                    .then_ignore(just(b'%'))
+                    .map(Constraint::Percentage))
+                .or(int_parser
+                    .from_str()
+                    .unwrapped()
+                    .then_ignore(just(b'+'))
+                    .map(Constraint::Max))
+                .or(int_parser
+                    .from_str()
+                    .unwrapped()
+                    .then_ignore(just(b'-'))
+                    .map(Constraint::Min))
+                .or(int_parser.from_str().unwrapped().map(Constraint::Length))
+                .padded()
+                .separated_by(just(b','))
+                .allow_trailing(),
+        )
+        .then_ignore(just(b']'))
+        .try_map(
+            |((((name, split), split_index), direction), constraints), span| {
+                let rects = Layout::default()
+                    .margin(25.0)
+                    .direction(direction)
+                    .constraints(constraints.as_ref())
+                    .split(if let Some(rect) = unsafe { &mut *layouts }.get(&split) {
+                        rect[split_index]
+                    } else if split == "Size" {
+                        size
+                    } else {
+                        return Err(Simple::custom(
+                            span,
+                            format!("Could not find viewbox {split}"),
+                        ));
+                    });
+                unsafe { &mut *layouts }.insert(name, rects.into_iter().collect());
+                Ok(())
+            },
+        )
+        .or(ident_parser
+            .then(
+                ident_parser
+                    .padded()
+                    .separated_by(just(b','))
+                    .collect::<HashMap<String, String>>()
+                    .delimited_by(b'(', b')'),
             )
-                .then_ignore(just(b']'))
-                .try_map(
-                    |((((name, split), split_index), direction), constraints), span| {
-                        let rects = Layout::default()
-                            .margin(25.0)
-                            .direction(direction)
-                            .constraints(constraints.as_ref())
-                            .split(if let Some(rect) = unsafe { &mut *layouts }.get(&split) {
-                                rect[split_index]
-                            } else if split == "Size" {
-                                size
-                            } else {
+            .try_map(|((name, type_), mut values), span| {
+                let obj = match type_.as_str() {
+                    "Paragraph" | "paragraph" | "PP" | "pp" | "P" | "p" => {
+                        let value = match values.remove("value") {
+                            Some(val) => val,
+                            None => {
                                 return Err(Simple::custom(
-                                        span,
-                                        format!("Could not find viewbox {split}"),
-                                        ));
-                            });
-                        unsafe { &mut *layouts }.insert(
-                            name,
-                            rects
-                            .into_iter()
-                            .collect(),
-                            );
-                        Ok(())
+                                    span,
+                                    format!(
+                                        "A value is required for your text, try adding one\n{}: \
+                                         {}(value: \"Your Text\");",
+                                        name, type_
+                                    ),
+                                ))
+                            }
+                        };
+                        let font_family = values
+                            .remove("font_family")
+                            .unwrap_or(String::from("Helvetica"));
+                        let alignment = match match values.remove("alignment") {
+                            Some(a) => Some(a),
+                            None => values.remove("align"),
+                        }
+                        .as_deref()
+                        {
+                            Some("left") | Some("Left") => skia_safe::textlayout::TextAlign::Left,
+                            Some("right") | Some("Right") => {
+                                skia_safe::textlayout::TextAlign::Right
+                            }
+                            _ => skia_safe::textlayout::TextAlign::Center,
+                        };
+                        let font_size = values
+                            .remove("font_size")
+                            .map_or_else(|| 48.0, |k| k.parse().unwrap());
+                        let bounds = match bounds_fn(&value, font_size, &font_family, alignment) {
+                            Ok(bounds) => bounds,
+                            Err(e) => return Err(Simple::custom(span, e.to_string())),
+                        };
+                        Object {
+                            obj_type: ObjectType::Text {
+                                value,
+                                font_size,
+                                font_family,
+                                alignment,
+                                max_width: bounds.0,
+                            },
+                            position: Rect {
+                                left: 0.0,
+                                top: 0.0,
+                                right: bounds.0 as f64,
+                                bottom: bounds.1 as f64,
+                            },
+                            opacity: 0.0,
+                        }
+                    }
+                    "Header" | "header" | "NH" | "nh" | "SH" | "sh" | "H" | "h" => {
+                        let value = match values.remove("value") {
+                            Some(val) => val,
+                            None => {
+                                return Err(Simple::custom(
+                                    span,
+                                    format!(
+                                        "A value is required for your text, try adding one\n{}: \
+                                         {}(value: \"Your Text\");",
+                                        name, type_
+                                    ),
+                                ))
+                            }
+                        };
+                        let font_family = values
+                            .remove("font_family")
+                            .unwrap_or(String::from("Helvetica"));
+                        let alignment = match match values.remove("alignment") {
+                            Some(a) => Some(a),
+                            None => values.remove("align"),
+                        }
+                        .as_deref()
+                        {
+                            Some("left") | Some("Left") => skia_safe::textlayout::TextAlign::Left,
+                            Some("right") | Some("Right") => {
+                                skia_safe::textlayout::TextAlign::Right
+                            }
+                            _ => skia_safe::textlayout::TextAlign::Center,
+                        };
+                        let font_size = values
+                            .remove("font_size")
+                            .map_or_else(|| 72.0, |k| k.parse().unwrap());
+                        let bounds = match bounds_fn(&value, font_size, &font_family, alignment) {
+                            Ok(bounds) => bounds,
+                            Err(e) => return Err(Simple::custom(span, e.to_string())),
+                        };
+                        Object {
+                            obj_type: ObjectType::Text {
+                                value,
+                                font_size,
+                                font_family,
+                                alignment,
+                                max_width: bounds.0,
+                            },
+                            position: Rect {
+                                left: 0.0,
+                                top: 0.0,
+                                right: bounds.0 as f64,
+                                bottom: bounds.1 as f64,
+                            },
+                            opacity: 0.0,
+                        }
+                    }
+                    "Point" | "point" | "Circle" | "circle" => Object {
+                        obj_type: ObjectType::Point,
+                        position: Rect {
+                            left: 0.0,
+                            top: 0.0,
+                            right: 0.0,
+                            bottom: 0.0,
+                        },
+                        opacity: 0.0,
                     },
-                    )
-                        .or(ident_parser
-                            .then(
-                                ident_parser
-                                .padded()
-                                .separated_by(just(b','))
-                                .collect::<HashMap<String, String>>()
-                                .delimited_by(b'(', b')'),
-                                )
-                            .try_map(|((name, type_), mut values), span| {
-                                let obj = match type_.as_str() {
-                                    "Paragraph" | "paragraph" | "PP" | "pp" | "P" | "p" => {
-                                        let value =
-                                            match values
-                                            .remove("value")
-                                            {
-                                                Some(val) => val,
-                                                None => return Err(Simple::custom(span, format!("A value is required for your text, try adding one\n{}: {}(value: \"Your Text\");", name, type_)))
-                                            }
-                                        ;
-                                        let font_family = values
-                                            .remove("font_family")
-                                            .unwrap_or(String::from("Helvetica"));
-                                        let alignment = match match values.remove("alignment") {
-                                            Some(a) => Some(a),
-                                            None => values.remove("align"),
-                                        }
-                                        .as_deref()
-                                        {
-                                            Some("left") | Some("Left") => skia_safe::textlayout::TextAlign::Left,
-                                            Some("right") | Some("Right") => skia_safe::textlayout::TextAlign::Right,
-                                            _ => skia_safe::textlayout::TextAlign::Center,
-                                        };
-                                        let font_size = values
-                                            .remove("font_size")
-                                            .map_or_else(|| 48.0, |k| k.parse().unwrap());
-                                        let bounds = match bounds_fn(&value, font_size, &font_family, alignment) {
-                                            Ok(bounds) => bounds,
-                                            Err(e) => return Err(Simple::custom(span, e.to_string())),
-                                        };
-                                        Object {
-                                            obj_type: ObjectType::Text {
-                                                value,
-                                                font_size,
-                                                font_family,
-                                                alignment,
-                                                max_width: bounds.0,
-                                            },
-                                            position: Rect {
-                                                x: 0.0,
-                                                y: 0.0,
-                                                width: bounds.0 as f64,
-                                                height: bounds.1 as f64,
-                                            },
-                                            opacity: 0.0,
-                                        }
-                                    }
-                                    "Header" | "header" | "NH" | "nh" | "SH" | "sh" | "H" | "h" => {
-                                        let value =
-                                            match values
-                                            .remove("value")
-                                            {
-                                                Some(val) => val,
-                                                None => return Err(Simple::custom(span, format!("A value is required for your text, try adding one\n{}: {}(value: \"Your Text\");", name, type_)))
-                                            };
-                                        let font_family =
-                                            values
-                                            .remove("font_family")
-                                            .unwrap_or(String::from("Helvetica"));
-                                        let alignment = match match values.remove("alignment") {
-                                            Some(a) => Some(a),
-                                            None => values.remove("align"),
-                                        }
-                                        .as_deref()
-                                        {
-                                            Some("left") | Some("Left") => skia_safe::textlayout::TextAlign::Left,
-                                            Some("right") | Some("Right") => skia_safe::textlayout::TextAlign::Right,
-                                            _ => skia_safe::textlayout::TextAlign::Center,
-                                        };
-                                        let font_size =
-                                            values
-                                            .remove("font_size")
-                                            .map_or_else(|| 72.0, |k| k.parse().unwrap());
-                                        let bounds = match bounds_fn(&value, font_size, &font_family, alignment) {
-                                            Ok(bounds) => bounds,
-                                            Err(e) => return Err(Simple::custom(span, e.to_string())),
-                                        };
-                                        Object {
-                                            obj_type: ObjectType::Text {
-                                                value,
-                                                font_size,
-                                                font_family,
-                                                alignment,
-                                                max_width: bounds.0,
-                                            },
-                                            position: Rect {
-                                                x: 0.0,
-                                                y: 0.0,
-                                                width: bounds.0 as f64,
-                                                height: bounds.1 as f64,
-                                            },
-                                            opacity: 0.0,
-                                        }
-                                    }
-                                    "Point" | "point" | "Circle" | "circle" => {
-                                        Object {
-                                            obj_type: ObjectType::Point,
-                                            position: Rect {
-                                                x: 0.0,
-                                                y: 0.0,
-                                                width: 0.0,
-                                                height: 0.0,
-                                            },
-                                            opacity: 0.0,
-                                        }
-                                    }
-                                    e => return Err(Simple::custom(span, format!("Object cannot have type {}", e))),
-                                };
-                                unsafe { &mut *unused_objects }.insert(
-                                    name,
-                                    obj
-                                    );
-                                Ok(())
-                            })
-    .ignored());
+                    e => {
+                        return Err(Simple::custom(
+                            span,
+                            format!("Object cannot have type {}", e),
+                        ))
+                    }
+                };
+                unsafe { &mut *unused_objects }.insert(name, obj);
+                Ok(())
+            })
+            .ignored());
 
     let lexer = ident_parser
         .then(index_parser)
