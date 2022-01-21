@@ -1,19 +1,18 @@
-mod skia_render;
-
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
-use glutin::{
-    event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
-    event_loop::ControlFlow,
-    window::Fullscreen,
-};
-use glutin::{event_loop::EventLoop, ContextBuilder};
 use grezi::{layout::Rect, ObjectType, Slide};
-use skia_render::SkiaRenderer;
-use skia_safe::{
-    textlayout::{FontCollection, ParagraphStyle, TextStyle},
-    Canvas, Color4f, Font, FontMgr, FontStyle, Typeface,
+use skulpin::{
+    rafx::api::RafxExtents2D,
+    skia_safe::{
+        textlayout::{FontCollection, ParagraphBuilder, ParagraphStyle, TextStyle},
+        Color4f, Font, FontMgr, FontStyle, Typeface,
+    },
+    winit::{
+        event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
+        event_loop::{ControlFlow, EventLoop},
+        window::{Fullscreen, WindowBuilder},
+    },
 };
 use structopt::StructOpt;
 
@@ -35,15 +34,32 @@ struct Opts {
 fn main() -> anyhow::Result<()> {
     let opts = Opts::from_args();
     let map = unsafe { memmap::Mmap::map(&std::fs::File::open(opts.file)?)? };
-    let event_loop = EventLoop::new();
-    let monitor_size = event_loop.primary_monitor().unwrap().size();
+    let logical_size = skulpin::winit::dpi::LogicalSize::new(1920.0, 1080.0);
+    let visible_range = skulpin::skia_safe::Rect {
+        left: 0.0,
+        right: logical_size.width,
+        top: 0.0,
+        bottom: logical_size.height,
+    };
     let size = Rect {
         left: 0.0,
         top: 0.0,
         // windowed_context.window().inner_size().width as u16
-        right: monitor_size.width as f64,
+        right: logical_size.width as f64,
         // dbg!(windowed_context.window().inner_size().height) as u16
-        bottom: monitor_size.height as f64,
+        bottom: logical_size.height as f64,
+    };
+    let event_loop = EventLoop::new();
+    let winit_window = WindowBuilder::new()
+        .with_title("Grezi")
+        .with_inner_size(logical_size)
+        .with_fullscreen(Some(Fullscreen::Borderless(None)))
+        .with_transparent(true)
+        .build(&event_loop)?;
+    let window_size = winit_window.inner_size();
+    let extents = RafxExtents2D {
+        width: window_size.width,
+        height: window_size.height,
     };
     let mut font_mgr = FontCollection::new();
     font_mgr.set_default_font_manager(FontMgr::default(), None);
@@ -60,8 +76,20 @@ fn main() -> anyhow::Result<()> {
                 .set_typeface(typeface)
                 .set_font_families(&[font_family]);
             let mut style = ParagraphStyle::new();
-            style.set_text_align(alignment).set_text_style(&text_style);
-            let mut paragraph = skia_safe::textlayout::ParagraphBuilder::new(&style, &font_mgr);
+            style
+                .set_text_align(match alignment {
+                    grezi::layout::Alignment::Left => {
+                        skulpin::skia_safe::textlayout::TextAlign::Left
+                    }
+                    grezi::layout::Alignment::Right => {
+                        skulpin::skia_safe::textlayout::TextAlign::Right
+                    }
+                    grezi::layout::Alignment::Center => {
+                        skulpin::skia_safe::textlayout::TextAlign::Center
+                    }
+                })
+                .set_text_style(&text_style);
+            let mut paragraph = ParagraphBuilder::new(&style, &font_mgr);
             paragraph.add_text(text);
             let mut built = paragraph.build();
             let width = text
@@ -76,18 +104,13 @@ fn main() -> anyhow::Result<()> {
         easing::cubic_inout,
         opts.fps * opts.delay,
     )?;
-    let winit_window = glutin::window::WindowBuilder::new()
-        .with_title("Grezi")
-        .with_fullscreen(Some(Fullscreen::Borderless(None)))
-        .with_transparent(true);
-    let windowed_context = ContextBuilder::new()
-        .with_pixel_format(24, 8)
-        .with_stencil_buffer(8)
-        .with_gl_profile(glutin::GlProfile::Core)
-        .with_vsync(opts.vsync)
-        .build_windowed(winit_window, &event_loop)?;
-    let windowed_context = unsafe { windowed_context.make_current().unwrap() };
-    let mut skia = SkiaRenderer::new(&windowed_context);
+    let mut skia = skulpin::RendererBuilder::new()
+        .coordinate_system(skulpin::CoordinateSystem::VisibleRange(
+            visible_range,
+            skulpin::skia_safe::matrix::ScaleToFit::Center,
+        ))
+        .vsync_enabled(opts.vsync)
+        .build(&winit_window, extents)?;
     let mut index = 0;
     let mut drawing = true;
     let mut previous_frame_start = Instant::now();
@@ -101,13 +124,6 @@ fn main() -> anyhow::Result<()> {
             } => {
                 *control_flow = ControlFlow::Exit;
                 return;
-            }
-            Event::WindowEvent {
-                event: WindowEvent::Resized(physical_size),
-                ..
-            } => {
-                skia.resize(&windowed_context);
-                windowed_context.resize(physical_size);
             }
             Event::WindowEvent {
                 event:
@@ -144,13 +160,21 @@ fn main() -> anyhow::Result<()> {
                 _ => {}
             },
             Event::RedrawRequested(_) => {
-                {
-                    let canvas = skia.canvas();
-                    canvas.clear(Color4f::new(0.39, 0.39, 0.39, 1.0));
-                    draw(&slideshow[index], canvas, &font_mgr);
-                }
-                skia.flush();
-                windowed_context.swap_buffers().unwrap();
+                let window_size = winit_window.inner_size();
+                let window_extents = RafxExtents2D {
+                    width: window_size.width,
+                    height: window_size.height,
+                };
+                drawing = slideshow[index].step();
+                skia.draw(
+                    window_extents,
+                    winit_window.scale_factor(),
+                    |canvas, _coordinate_system_helper| {
+                        canvas.clear(Color4f::new(0.39, 0.39, 0.39, 1.0));
+                        draw(&slideshow[index], canvas, &font_mgr);
+                    },
+                )
+                .unwrap();
             }
 
             _ => (),
@@ -159,12 +183,16 @@ fn main() -> anyhow::Result<()> {
 
         if frame_start - previous_frame_start > frame_duration {
             if drawing {
-                let canvas = skia.canvas();
-                canvas.clear(Color4f::new(0.39, 0.39, 0.39, 1.0));
                 drawing = slideshow[index].step();
-                draw(&slideshow[index], canvas, &font_mgr);
-                skia.flush();
-                windowed_context.swap_buffers().unwrap();
+                skia.draw(
+                    extents,
+                    winit_window.scale_factor(),
+                    |canvas, _coordinate_system_helper| {
+                        canvas.clear(Color4f::new(0.39, 0.39, 0.39, 1.0));
+                        draw(&slideshow[index], canvas, &font_mgr);
+                    },
+                )
+                .unwrap();
             }
             previous_frame_start = frame_start;
         }
@@ -175,7 +203,7 @@ fn main() -> anyhow::Result<()> {
 
 pub fn draw<I: Iterator<Item = f64>, O: Iterator<Item = f32>>(
     slide: &Slide<I, O>,
-    canvas: &mut Canvas,
+    canvas: &mut skulpin::skia_safe::Canvas,
     collection: &FontCollection,
 ) {
     for cmd in slide.0.iter() {
@@ -194,16 +222,28 @@ pub fn draw<I: Iterator<Item = f64>, O: Iterator<Item = f32>>(
                         .set_font_size(*font_size)
                         .set_font_families(&[font_family])
                         .set_typeface(typeface)
-                        .set_color(skia_safe::Color::from_argb(
+                        .set_color(skulpin::skia_safe::Color::from_argb(
                             (obj.opacity * 255.0) as u8,
                             255,
                             255,
                             255,
                         ));
                     let mut style = ParagraphStyle::new();
-                    style.set_text_align(*alignment).set_text_style(&text_style);
+                    style
+                        .set_text_align(match alignment {
+                            grezi::layout::Alignment::Left => {
+                                skulpin::skia_safe::textlayout::TextAlign::Left
+                            }
+                            grezi::layout::Alignment::Right => {
+                                skulpin::skia_safe::textlayout::TextAlign::Right
+                            }
+                            grezi::layout::Alignment::Center => {
+                                skulpin::skia_safe::textlayout::TextAlign::Center
+                            }
+                        })
+                        .set_text_style(&text_style);
                     let mut paragraph =
-                        skia_safe::textlayout::ParagraphBuilder::new(&style, collection);
+                        skulpin::skia_safe::textlayout::ParagraphBuilder::new(&style, collection);
                     paragraph.add_text(value);
                     let mut built = paragraph.build();
                     built.layout(*max_width);
@@ -215,8 +255,17 @@ pub fn draw<I: Iterator<Item = f64>, O: Iterator<Item = f32>>(
     }
     #[cfg(debug_assertions)]
     {
-        let paint = skia_safe::Paint::new(skia_safe::Color4f::new(1.0, 1.0, 0.5, 0.5), None);
-        canvas.draw_rect(skia_safe::Rect::from_xywh(955.0, 0.0, 10.0, 1080.0), &paint);
-        canvas.draw_rect(skia_safe::Rect::from_xywh(0.0, 535.0, 1920.0, 10.0), &paint);
+        let paint = skulpin::skia_safe::Paint::new(
+            skulpin::skia_safe::Color4f::new(1.0, 1.0, 0.5, 0.5),
+            None,
+        );
+        canvas.draw_rect(
+            skulpin::skia_safe::Rect::from_xywh(955.0, 0.0, 10.0, 1080.0),
+            &paint,
+        );
+        canvas.draw_rect(
+            skulpin::skia_safe::Rect::from_xywh(0.0, 535.0, 1920.0, 10.0),
+            &paint,
+        );
     }
 }

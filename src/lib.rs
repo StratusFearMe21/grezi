@@ -153,7 +153,7 @@ pub enum ObjectType {
         /// Font family of the text
         font_family: String,
         /// Alignment of the text in question
-        alignment: skia_safe::textlayout::TextAlign,
+        alignment: layout::Alignment,
         /// Max width of the text block (for internal use)
         max_width: f32,
     },
@@ -248,7 +248,7 @@ pub fn file_to_tokens<
     delay: U,
 ) -> anyhow::Result<Vec<Slide<I, O>>>
 where
-    F: Fn(&String, f32, &String, skia_safe::textlayout::TextAlign) -> anyhow::Result<(f32, f32)>,
+    F: Fn(&String, f32, &String, layout::Alignment) -> anyhow::Result<(f32, f32)>,
     E: Fn(f64, f64, U) -> I,
     G: Fn(f32, f32, U) -> O,
 {
@@ -386,11 +386,9 @@ where
                         }
                         .as_deref()
                         {
-                            Some("left") | Some("Left") => skia_safe::textlayout::TextAlign::Left,
-                            Some("right") | Some("Right") => {
-                                skia_safe::textlayout::TextAlign::Right
-                            }
-                            _ => skia_safe::textlayout::TextAlign::Center,
+                            Some("left") | Some("Left") => layout::Alignment::Left,
+                            Some("right") | Some("Right") => layout::Alignment::Right,
+                            _ => layout::Alignment::Center,
                         };
                         let font_size = values
                             .remove("font_size")
@@ -439,11 +437,9 @@ where
                         }
                         .as_deref()
                         {
-                            Some("left") | Some("Left") => skia_safe::textlayout::TextAlign::Left,
-                            Some("right") | Some("Right") => {
-                                skia_safe::textlayout::TextAlign::Right
-                            }
-                            _ => skia_safe::textlayout::TextAlign::Center,
+                            Some("left") | Some("Left") => layout::Alignment::Left,
+                            Some("right") | Some("Right") => layout::Alignment::Right,
+                            _ => layout::Alignment::Center,
                         };
                         let font_size = values
                             .remove("font_size")

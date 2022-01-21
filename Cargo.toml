@@ -12,10 +12,11 @@ ariadne = "*"
 chumsky = "*"
 memmap = "*"
 anyhow = "*"
-skia-safe = { version = "*", features = ["gl", "textlayout"] }
-once_cell = "*"
-glutin = "*"
-gl = "*"
+skulpin = { version = "*", features = [
+  "skia-textlayout",
+  "winit-latest",
+  "winit-app",
+] }
 easing = { git = "https://github.com/StratusFearMe21/easing" }
 num-traits = "*"
 structopt = "*"
