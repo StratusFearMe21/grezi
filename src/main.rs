@@ -57,10 +57,11 @@ fn main() -> anyhow::Result<()> {
         .with_transparent(true)
         .build(&event_loop)?;
     let window_size = winit_window.inner_size();
-    let extents = RafxExtents2D {
+    let mut extents = RafxExtents2D {
         width: window_size.width,
         height: window_size.height,
     };
+    let mut s_factor = winit_window.scale_factor();
     let mut font_mgr = FontCollection::new();
     font_mgr.set_default_font_manager(FontMgr::default(), None);
     let mut slideshow = grezi::file_to_tokens(
@@ -114,8 +115,10 @@ fn main() -> anyhow::Result<()> {
     let mut index = 0;
     let mut drawing = true;
     let mut previous_frame_start = Instant::now();
+    let frame_duration = Duration::from_secs_f64(1.0 / opts.fps);
     event_loop.run(move |e, _window_target, control_flow| {
         let frame_start = Instant::now();
+        *control_flow = ControlFlow::Wait;
 
         match e {
             Event::WindowEvent {
@@ -123,7 +126,29 @@ fn main() -> anyhow::Result<()> {
                 ..
             } => {
                 *control_flow = ControlFlow::Exit;
-                return;
+            }
+            Event::WindowEvent {
+                event:
+                    WindowEvent::ScaleFactorChanged {
+                        scale_factor,
+                        new_inner_size,
+                    },
+                ..
+            } => {
+                s_factor = scale_factor;
+                extents = RafxExtents2D {
+                    width: new_inner_size.width,
+                    height: new_inner_size.height,
+                };
+            }
+            Event::WindowEvent {
+                event: WindowEvent::Resized(s),
+                ..
+            } => {
+                extents = RafxExtents2D {
+                    width: s.width,
+                    height: s.height,
+                };
             }
             Event::WindowEvent {
                 event:
@@ -140,7 +165,6 @@ fn main() -> anyhow::Result<()> {
             } => match virtual_keycode {
                 Some(VirtualKeyCode::Q) => {
                     *control_flow = ControlFlow::Exit;
-                    return;
                 }
                 Some(VirtualKeyCode::Right) => {
                     if index != slideshow.len() - 1 {
@@ -148,7 +172,6 @@ fn main() -> anyhow::Result<()> {
                         drawing = true;
                     } else {
                         *control_flow = ControlFlow::Exit;
-                        return;
                     }
                 }
                 Some(VirtualKeyCode::Left) => {
@@ -160,44 +183,27 @@ fn main() -> anyhow::Result<()> {
                 _ => {}
             },
             Event::RedrawRequested(_) => {
-                let window_size = winit_window.inner_size();
-                let window_extents = RafxExtents2D {
-                    width: window_size.width,
-                    height: window_size.height,
-                };
-                drawing = slideshow[index].step();
-                skia.draw(
-                    window_extents,
-                    winit_window.scale_factor(),
-                    |canvas, _coordinate_system_helper| {
-                        canvas.clear(Color4f::new(0.39, 0.39, 0.39, 1.0));
-                        draw(&slideshow[index], canvas, &font_mgr);
-                    },
-                )
+                skia.draw(extents, s_factor, |canvas, _coordinate_system_helper| {
+                    canvas.clear(Color4f::new(0.39, 0.39, 0.39, 1.0));
+                    draw(&slideshow[index], canvas, &font_mgr);
+                })
                 .unwrap();
             }
-
             _ => (),
         }
-        let frame_duration = Duration::from_secs_f64(1.0 / opts.fps);
 
-        if frame_start - previous_frame_start > frame_duration {
-            if drawing {
+        if drawing {
+            if frame_start - previous_frame_start > frame_duration {
                 drawing = slideshow[index].step();
-                skia.draw(
-                    extents,
-                    winit_window.scale_factor(),
-                    |canvas, _coordinate_system_helper| {
-                        canvas.clear(Color4f::new(0.39, 0.39, 0.39, 1.0));
-                        draw(&slideshow[index], canvas, &font_mgr);
-                    },
-                )
+                skia.draw(extents, s_factor, |canvas, _coordinate_system_helper| {
+                    canvas.clear(Color4f::new(0.39, 0.39, 0.39, 1.0));
+                    draw(&slideshow[index], canvas, &font_mgr);
+                })
                 .unwrap();
+                previous_frame_start = frame_start;
             }
-            previous_frame_start = frame_start;
+            *control_flow = ControlFlow::WaitUntil(previous_frame_start + frame_duration)
         }
-
-        *control_flow = ControlFlow::WaitUntil(previous_frame_start + frame_duration)
     });
 }
 
