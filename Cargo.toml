@@ -19,6 +19,7 @@ skulpin = { version = "*", features = [
 ] }
 easing = { git = "https://github.com/StratusFearMe21/easing" }
 num-traits = "*"
+ahash = "*"
 structopt = "*"
 cassowary = "*"
 

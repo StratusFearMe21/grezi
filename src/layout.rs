@@ -1,16 +1,8 @@
-use std::collections::HashMap;
-
+use ahash::RandomState;
+type AHashMap<K, V> = std::collections::HashMap<K, V, RandomState>;
 use cassowary::strength::{REQUIRED, WEAK};
 use cassowary::WeightedRelation::*;
 use cassowary::{Constraint as CassowaryConstraint, Expression, Solver, Variable};
-
-#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq)]
-pub enum Corner {
-    TopLeft,
-    TopRight,
-    BottomRight,
-    BottomLeft,
-}
 
 #[derive(Debug, Hash, Clone, PartialEq, Eq)]
 pub enum Direction {
@@ -29,6 +21,7 @@ pub enum Constraint {
 }
 
 impl Constraint {
+    #[inline]
     pub fn apply(&self, length: f64) -> f64 {
         match *self {
             Constraint::Percentage(p) => length * p / 100.0,
@@ -46,13 +39,6 @@ pub struct Margin {
     pub horizontal: f64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Alignment {
-    Left,
-    Center,
-    Right,
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Layout {
     direction: Direction,
@@ -64,6 +50,7 @@ pub struct Layout {
 }
 
 impl Default for Layout {
+    #[inline]
     fn default() -> Layout {
         Layout {
             direction: Direction::Vertical,
@@ -78,6 +65,7 @@ impl Default for Layout {
 }
 
 impl Layout {
+    #[inline]
     pub fn constraints<C>(mut self, constraints: C) -> Layout
     where
         C: Into<Vec<Constraint>>,
@@ -86,6 +74,7 @@ impl Layout {
         self
     }
 
+    #[inline]
     pub fn margin(mut self, margin: f64) -> Layout {
         self.margin = Margin {
             horizontal: margin,
@@ -94,16 +83,19 @@ impl Layout {
         self
     }
 
+    #[inline]
     pub fn horizontal_margin(mut self, horizontal: f64) -> Layout {
         self.margin.horizontal = horizontal;
         self
     }
 
+    #[inline]
     pub fn vertical_margin(mut self, vertical: f64) -> Layout {
         self.margin.vertical = vertical;
         self
     }
 
+    #[inline]
     pub fn direction(mut self, direction: Direction) -> Layout {
         self.direction = direction;
         self
@@ -170,137 +162,132 @@ impl Layout {
     /// );
     /// ```
     pub fn split(&self, area: Rect) -> Vec<Rect> {
-        // TODO: Maybe use a fixed size cache ?
-        split(area, self)
-    }
-}
+        let mut solver = Solver::new();
+        let mut vars: AHashMap<Variable, (usize, usize)> = AHashMap::default();
+        let elements = self
+            .constraints
+            .iter()
+            .map(|_| Element::new())
+            .collect::<Vec<Element>>();
+        let mut results = self
+            .constraints
+            .iter()
+            .map(|_| Rect::default())
+            .collect::<Vec<Rect>>();
 
-fn split(area: Rect, layout: &Layout) -> Vec<Rect> {
-    let mut solver = Solver::new();
-    let mut vars: HashMap<Variable, (usize, usize)> = HashMap::new();
-    let elements = layout
-        .constraints
-        .iter()
-        .map(|_| Element::new())
-        .collect::<Vec<Element>>();
-    let mut results = layout
-        .constraints
-        .iter()
-        .map(|_| Rect::default())
-        .collect::<Vec<Rect>>();
-
-    let dest_area = area.inner(&layout.margin);
-    for (i, e) in elements.iter().enumerate() {
-        vars.insert(e.x, (i, 0));
-        vars.insert(e.y, (i, 1));
-        vars.insert(e.width, (i, 2));
-        vars.insert(e.height, (i, 3));
-    }
-    let mut ccs: Vec<CassowaryConstraint> =
-        Vec::with_capacity(elements.len() * 4 + layout.constraints.len() * 6);
-    for elt in &elements {
-        ccs.push(elt.width | GE(REQUIRED) | 0f64);
-        ccs.push(elt.height | GE(REQUIRED) | 0f64);
-        ccs.push(elt.left() | GE(REQUIRED) | dest_area.left);
-        ccs.push(elt.top() | GE(REQUIRED) | dest_area.top);
-        ccs.push(elt.right() | LE(REQUIRED) | dest_area.right);
-        ccs.push(elt.bottom() | LE(REQUIRED) | dest_area.bottom);
-    }
-    if let Some(first) = elements.first() {
-        ccs.push(match layout.direction {
-            Direction::Horizontal => first.left() | EQ(REQUIRED) | dest_area.left,
-            Direction::Vertical => first.top() | EQ(REQUIRED) | dest_area.top,
-        });
-    }
-    if layout.expand_to_fill {
-        if let Some(last) = elements.last() {
-            ccs.push(match layout.direction {
-                Direction::Horizontal => last.right() | EQ(REQUIRED) | dest_area.right,
-                Direction::Vertical => last.bottom() | EQ(REQUIRED) | dest_area.bottom,
+        let dest_area = area.inner(&self.margin);
+        for (i, e) in elements.iter().enumerate() {
+            vars.insert(e.x, (i, 0));
+            vars.insert(e.y, (i, 1));
+            vars.insert(e.width, (i, 2));
+            vars.insert(e.height, (i, 3));
+        }
+        let mut ccs: Vec<CassowaryConstraint> =
+            Vec::with_capacity(elements.len() * 4 + self.constraints.len() * 6);
+        for elt in &elements {
+            ccs.push(elt.width | GE(REQUIRED) | 0f64);
+            ccs.push(elt.height | GE(REQUIRED) | 0f64);
+            ccs.push(elt.left() | GE(REQUIRED) | dest_area.left);
+            ccs.push(elt.top() | GE(REQUIRED) | dest_area.top);
+            ccs.push(elt.right() | LE(REQUIRED) | dest_area.right);
+            ccs.push(elt.bottom() | LE(REQUIRED) | dest_area.bottom);
+        }
+        if let Some(first) = elements.first() {
+            ccs.push(match self.direction {
+                Direction::Horizontal => first.left() | EQ(REQUIRED) | dest_area.left,
+                Direction::Vertical => first.top() | EQ(REQUIRED) | dest_area.top,
             });
         }
-    }
-    match layout.direction {
-        Direction::Horizontal => {
-            for pair in elements.windows(2) {
-                ccs.push((pair[0].x + pair[0].width) | EQ(REQUIRED) | pair[1].x);
-            }
-            for (i, size) in layout.constraints.iter().enumerate() {
-                ccs.push(elements[i].y | EQ(REQUIRED) | dest_area.top);
-                ccs.push(elements[i].height | EQ(REQUIRED) | dest_area.height());
-                ccs.push(match *size {
-                    Constraint::Length(v) => elements[i].width | EQ(WEAK) | v,
-                    Constraint::Percentage(v) => {
-                        elements[i].width | EQ(WEAK) | (v * dest_area.width() / 100.0)
-                    }
-                    Constraint::Ratio(n, d) => {
-                        elements[i].width | EQ(WEAK) | (dest_area.width() * n / d)
-                    }
-                    Constraint::Min(v) => elements[i].width | GE(WEAK) | v,
-                    Constraint::Max(v) => elements[i].width | LE(WEAK) | v,
+        if self.expand_to_fill {
+            if let Some(last) = elements.last() {
+                ccs.push(match self.direction {
+                    Direction::Horizontal => last.right() | EQ(REQUIRED) | dest_area.right,
+                    Direction::Vertical => last.bottom() | EQ(REQUIRED) | dest_area.bottom,
                 });
             }
         }
-        Direction::Vertical => {
-            for pair in elements.windows(2) {
-                ccs.push((pair[0].y + pair[0].height) | EQ(REQUIRED) | pair[1].y);
+        match self.direction {
+            Direction::Horizontal => {
+                for pair in elements.windows(2) {
+                    ccs.push((pair[0].x + pair[0].width) | EQ(REQUIRED) | pair[1].x);
+                }
+                for (i, size) in self.constraints.iter().enumerate() {
+                    ccs.push(elements[i].y | EQ(REQUIRED) | dest_area.top);
+                    ccs.push(elements[i].height | EQ(REQUIRED) | dest_area.height());
+                    ccs.push(match *size {
+                        Constraint::Length(v) => elements[i].width | EQ(WEAK) | v,
+                        Constraint::Percentage(v) => {
+                            elements[i].width | EQ(WEAK) | (v * dest_area.width() / 100.0)
+                        }
+                        Constraint::Ratio(n, d) => {
+                            elements[i].width | EQ(WEAK) | (dest_area.width() * n / d)
+                        }
+                        Constraint::Min(v) => elements[i].width | GE(WEAK) | v,
+                        Constraint::Max(v) => elements[i].width | LE(WEAK) | v,
+                    });
+                }
             }
-            for (i, size) in layout.constraints.iter().enumerate() {
-                ccs.push(elements[i].x | EQ(REQUIRED) | dest_area.left);
-                ccs.push(elements[i].width | EQ(REQUIRED) | dest_area.width());
-                ccs.push(match *size {
-                    Constraint::Length(v) => elements[i].height | EQ(WEAK) | v,
-                    Constraint::Percentage(v) => {
-                        elements[i].height | EQ(WEAK) | (v * dest_area.height() / 100.0)
-                    }
-                    Constraint::Ratio(n, d) => {
-                        elements[i].height | EQ(WEAK) | (dest_area.height() * n / d)
-                    }
-                    Constraint::Min(v) => elements[i].height | GE(WEAK) | v,
-                    Constraint::Max(v) => elements[i].height | LE(WEAK) | v,
-                });
+            Direction::Vertical => {
+                for pair in elements.windows(2) {
+                    ccs.push((pair[0].y + pair[0].height) | EQ(REQUIRED) | pair[1].y);
+                }
+                for (i, size) in self.constraints.iter().enumerate() {
+                    ccs.push(elements[i].x | EQ(REQUIRED) | dest_area.left);
+                    ccs.push(elements[i].width | EQ(REQUIRED) | dest_area.width());
+                    ccs.push(match *size {
+                        Constraint::Length(v) => elements[i].height | EQ(WEAK) | v,
+                        Constraint::Percentage(v) => {
+                            elements[i].height | EQ(WEAK) | (v * dest_area.height() / 100.0)
+                        }
+                        Constraint::Ratio(n, d) => {
+                            elements[i].height | EQ(WEAK) | (dest_area.height() * n / d)
+                        }
+                        Constraint::Min(v) => elements[i].height | GE(WEAK) | v,
+                        Constraint::Max(v) => elements[i].height | LE(WEAK) | v,
+                    });
+                }
             }
         }
-    }
-    solver.add_constraints(&ccs).unwrap();
-    for &(var, value) in solver.fetch_changes() {
-        let (index, attr) = vars[&var];
-        let value = if value.is_sign_negative() { 0.0 } else { value };
-        match attr {
-            0 => {
-                let width = results[index].width();
-                results[index].left = value;
-                results[index].right = value + width;
+        solver.add_constraints(&ccs).unwrap();
+        for &(var, value) in solver.fetch_changes() {
+            let (index, attr) = vars[&var];
+            let value = if value.is_sign_negative() { 0.0 } else { value };
+            match attr {
+                0 => {
+                    let width = results[index].width();
+                    results[index].left = value;
+                    results[index].right = value + width;
+                }
+                1 => {
+                    let height = results[index].height();
+                    results[index].top = value;
+                    results[index].bottom = value + height;
+                }
+                2 => {
+                    results[index].right = results[index].left + value;
+                }
+                3 => {
+                    results[index].bottom = results[index].top + value;
+                }
+                _ => {}
             }
-            1 => {
-                let height = results[index].height();
-                results[index].top = value;
-                results[index].bottom = value + height;
-            }
-            2 => {
-                results[index].right = results[index].left + value;
-            }
-            3 => {
-                results[index].bottom = results[index].top + value;
-            }
-            _ => {}
         }
-    }
 
-    if layout.expand_to_fill {
-        // Fix imprecision by extending the last item a bit if necessary
-        if let Some(last) = results.last_mut() {
-            match layout.direction {
-                Direction::Vertical => {
-                    last.bottom = dest_area.bottom;
-                }
-                Direction::Horizontal => {
-                    last.right = dest_area.right;
+        if self.expand_to_fill {
+            // Fix imprecision by extending the last item a bit if necessary
+            if let Some(last) = results.last_mut() {
+                match self.direction {
+                    Direction::Vertical => {
+                        last.bottom = dest_area.bottom;
+                    }
+                    Direction::Horizontal => {
+                        last.right = dest_area.right;
+                    }
                 }
             }
         }
+        results
     }
-    results
 }
 
 /// A container used by the solver inside split
@@ -312,6 +299,7 @@ struct Element {
 }
 
 impl Element {
+    #[inline]
     fn new() -> Element {
         Element {
             x: Variable::new(),
@@ -321,18 +309,22 @@ impl Element {
         }
     }
 
+    #[inline]
     fn left(&self) -> Variable {
         self.x
     }
 
+    #[inline]
     fn top(&self) -> Variable {
         self.y
     }
 
+    #[inline]
     fn right(&self) -> Expression {
         self.x + self.width
     }
 
+    #[inline]
     fn bottom(&self) -> Expression {
         self.y + self.height
     }
@@ -370,18 +362,22 @@ impl Rect {
         }
     }
 
+    #[inline]
     pub fn area(self) -> f64 {
         self.width() * self.height()
     }
 
+    #[inline]
     pub fn width(self) -> f64 {
         self.right - self.left
     }
 
+    #[inline]
     pub fn height(self) -> f64 {
         self.bottom - self.top
     }
 
+    #[inline]
     pub fn inner(self, margin: &Margin) -> Rect {
         if self.width() < 2.0 * margin.horizontal || self.height() < 2.0 * margin.vertical {
             Rect::default()
@@ -395,32 +391,27 @@ impl Rect {
         }
     }
 
+    #[inline]
     pub fn union(self, other: Rect) -> Rect {
-        let x1 = f64::min(self.left, other.left);
-        let y1 = f64::min(self.top, other.top);
-        let x2 = f64::max(self.right, other.right);
-        let y2 = f64::max(self.bottom, other.bottom);
         Rect {
-            left: x1,
-            top: y1,
-            right: x2,
-            bottom: y2,
+            left: f64::min(self.left, other.left),
+            top: f64::min(self.top, other.top),
+            right: f64::max(self.right, other.right),
+            bottom: f64::max(self.bottom, other.bottom),
         }
     }
 
+    #[inline]
     pub fn intersection(self, other: Rect) -> Rect {
-        let x1 = f64::max(self.left, other.left);
-        let y1 = f64::max(self.top, other.top);
-        let x2 = f64::min(self.right, other.right);
-        let y2 = f64::min(self.bottom, other.bottom);
         Rect {
-            left: x1,
-            top: y1,
-            right: x2,
-            bottom: y2,
+            left: f64::max(self.left, other.left),
+            top: f64::max(self.top, other.top),
+            right: f64::min(self.right, other.right),
+            bottom: f64::min(self.bottom, other.bottom),
         }
     }
 
+    #[inline]
     pub fn intersects(self, other: Rect) -> bool {
         self.left < other.right
             && self.right > other.left

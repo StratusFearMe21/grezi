@@ -2,8 +2,10 @@
 
 pub mod layout;
 
-use std::{collections::HashMap, iter::Zip};
+use std::iter::Zip;
 
+use ahash::RandomState;
+pub type AHashMap<K, V> = std::collections::HashMap<K, V, RandomState>;
 use anyhow::bail;
 use ariadne::{Label, Source};
 use chumsky::prelude::*;
@@ -63,7 +65,7 @@ type Viewbox = (
 type SlideType = Vec<(((String, String), usize), (LineUp, LineUp))>;
 
 /// This is the AST of the "grz" format
-pub enum Token {
+pub enum Token<T: Object + Clone> {
     /// A method of splitting the screen a certain way
     Viewbox(
         /// The Viewbox itself
@@ -74,7 +76,7 @@ pub enum Token {
         /// The name of the object
         String,
         /// The object itself
-        Object,
+        SlideObject<T>,
     ),
     /// The slide itself
     Slide(
@@ -115,15 +117,53 @@ pub enum LineUp {
     CenterTop,
 }
 
+pub trait Object: std::fmt::Debug + Sized {
+    fn bounds(&mut self, w: f64, h: f64) -> anyhow::Result<(f64, f64)>;
+    fn construct(
+        name: String,
+        type_: String,
+        values: &mut AHashMap<String, String>,
+    ) -> anyhow::Result<Self>;
+}
+
+//--> Structs
+
+/// A parsed and complete object
+#[derive(Debug, Clone)]
+pub struct SlideObject<T: Object + Clone> {
+    /// The type of the object
+    pub obj_type: T,
+    /// The current position of the object
+    pub position: Rect,
+    /// The current opacity of the object
+    pub opacity: f32,
+}
+
+/// A slide
+pub struct Slide<T: Object + Clone, I: Iterator<Item = f64>, O: Iterator<Item = f32>>(
+    pub Vec<Cmd<T, I, O>>,
+);
+
+impl<T: Object + Clone, I: Iterator<Item = f64>, O: Iterator<Item = f32>> Slide<T, I, O> {
+    pub fn step(&mut self) -> bool {
+        for f in self.0.iter_mut().map(|f| f.step()) {
+            if !f {
+                return false;
+            }
+        }
+        true
+    }
+}
+
 /// Commands are used to draw and move objects on the screen
-pub struct Cmd<I: Iterator<Item = f64>, O: Iterator<Item = f32>>(
+pub struct Cmd<T: Object + Clone, I: Iterator<Item = f64>, O: Iterator<Item = f32>>(
     /// The object to add
-    pub Object,
+    pub SlideObject<T>,
     /// Easing for (x, y, opacity)
     pub Zip<Zip<I, I>, O>,
 );
 
-impl<I: Iterator<Item = f64>, O: Iterator<Item = f32>> Cmd<I, O> {
+impl<T: Object + Clone, I: Iterator<Item = f64>, O: Iterator<Item = f32>> Cmd<T, I, O> {
     /// Advance the object's easing functions
     pub fn step(&mut self) -> bool {
         if let Some(e) = self.1.next() {
@@ -138,53 +178,6 @@ impl<I: Iterator<Item = f64>, O: Iterator<Item = f32>> Cmd<I, O> {
         } else {
             false
         }
-    }
-}
-
-#[derive(Debug, Clone)]
-/// The type of the objcet in question
-pub enum ObjectType {
-    /// Draw text to the screen
-    Text {
-        /// The text to draw, each index in the vector is a newline.
-        value: String,
-        /// Font size of the text
-        font_size: f32,
-        /// Font family of the text
-        font_family: String,
-        /// Alignment of the text in question
-        alignment: layout::Alignment,
-        /// Max width of the text block (for internal use)
-        max_width: f32,
-    },
-    /// Draw a circle to the screen
-    Point,
-}
-
-//--> Structs
-
-/// A parsed and complete object
-#[derive(Debug, Clone)]
-pub struct Object {
-    /// The type of the object
-    pub obj_type: ObjectType,
-    /// The current position of the object
-    pub position: Rect,
-    /// The current opacity of the object
-    pub opacity: f32,
-}
-
-/// A slide
-pub struct Slide<I: Iterator<Item = f64>, O: Iterator<Item = f32>>(pub Vec<Cmd<I, O>>);
-
-impl<I: Iterator<Item = f64>, O: Iterator<Item = f32>> Slide<I, O> {
-    pub fn step(&mut self) -> bool {
-        for f in self.0.iter_mut().map(|f| f.step()) {
-            if !f {
-                return false;
-            }
-        }
-        true
     }
 }
 
@@ -233,34 +226,29 @@ fn fold_lineup(line_up: (LineUpGeneral, LineUpGeneral)) -> LineUp {
 //--> Public Functions
 
 pub fn file_to_tokens<
-    F,
-    G,
     U: ToPrimitive + One + Zero + NumAssignOps + PartialOrd + Copy,
     I: Iterator<Item = f64>,
     O: Iterator<Item = f32>,
-    E,
+    E: Fn(f64, f64, U) -> I,
+    G: Fn(f32, f32, U) -> O,
+    T: Object + Clone,
 >(
     file: &[u8],
     size: Rect,
-    bounds_fn: F,
     opacity_fn: G,
     easing_fn: E,
     delay: U,
-) -> anyhow::Result<Vec<Slide<I, O>>>
-where
-    F: Fn(&String, f32, &String, layout::Alignment) -> anyhow::Result<(f32, f32)>,
-    E: Fn(f64, f64, U) -> I,
-    G: Fn(f32, f32, U) -> O,
-{
-    let mut layouts_raw: HashMap<String, Vec<Rect>> = HashMap::new();
-    let layouts: *mut HashMap<String, Vec<Rect>> = &mut layouts_raw as *mut _;
-    let mut unused_objects_raw: HashMap<String, Object> = HashMap::new();
-    let unused_objects: *mut HashMap<String, Object> = &mut unused_objects_raw as *mut _;
-    let mut objects_in_view_raw: HashMap<String, (*mut Object, Rect)> = HashMap::new();
-    let objects_in_view: *mut HashMap<String, (*mut Object, Rect)> =
+) -> anyhow::Result<Vec<Slide<T, I, O>>> {
+    let mut layouts_raw: AHashMap<String, Vec<Rect>> = AHashMap::default();
+    let layouts: *mut AHashMap<String, Vec<Rect>> = &mut layouts_raw as *mut _;
+    let mut unused_objects_raw: AHashMap<String, SlideObject<T>> = AHashMap::default();
+    let unused_objects: *mut AHashMap<String, SlideObject<T>> = &mut unused_objects_raw as *mut _;
+    let mut objects_in_view_raw: AHashMap<String, (*mut SlideObject<T>, Rect)> =
+        AHashMap::default();
+    let objects_in_view: *mut AHashMap<String, (*mut SlideObject<T>, Rect)> =
         &mut objects_in_view_raw as *mut _;
-    let mut slides: Vec<Slide<I, O>> = Vec::new();
-    let slides_ptr: *mut Vec<Slide<I, O>> = &mut slides as *mut _;
+    let mut slides: Vec<Slide<T, I, O>> = Vec::new();
+    let slides_ptr: *mut Vec<Slide<T, I, O>> = &mut slides as *mut _;
 
     let str_parser = filter(|c| *c != b'"')
         .repeated()
@@ -336,7 +324,7 @@ where
         .try_map(
             |((((name, split), split_index), direction), constraints), span| {
                 let rects = Layout::default()
-                    .margin(25.0)
+                    .margin(50.0)
                     .direction(direction)
                     .constraints(constraints.as_ref())
                     .split(if let Some(rect) = unsafe { &mut *layouts }.get(&split) {
@@ -358,131 +346,27 @@ where
                 ident_parser
                     .padded()
                     .separated_by(just(b','))
-                    .collect::<HashMap<String, String>>()
+                    .collect::<AHashMap<String, String>>()
                     .delimited_by(b'(', b')'),
             )
             .try_map(|((name, type_), mut values), span| {
-                let obj = match type_.as_str() {
-                    "Paragraph" | "paragraph" | "PP" | "pp" | "P" | "p" => {
-                        let value = match values.remove("value") {
-                            Some(val) => val,
-                            None => {
-                                return Err(Simple::custom(
-                                    span,
-                                    format!(
-                                        "A value is required for your text, try adding one\n{}: \
-                                         {}(value: \"Your Text\");",
-                                        name, type_
-                                    ),
-                                ))
-                            }
-                        };
-                        let font_family = values
-                            .remove("font_family")
-                            .unwrap_or(String::from("Helvetica"));
-                        let alignment = match match values.remove("alignment") {
-                            Some(a) => Some(a),
-                            None => values.remove("align"),
-                        }
-                        .as_deref()
-                        {
-                            Some("left") | Some("Left") => layout::Alignment::Left,
-                            Some("right") | Some("Right") => layout::Alignment::Right,
-                            _ => layout::Alignment::Center,
-                        };
-                        let font_size = values
-                            .remove("font_size")
-                            .map_or_else(|| 48.0, |k| k.parse().unwrap());
-                        let bounds = match bounds_fn(&value, font_size, &font_family, alignment) {
-                            Ok(bounds) => bounds,
-                            Err(e) => return Err(Simple::custom(span, e.to_string())),
-                        };
-                        Object {
-                            obj_type: ObjectType::Text {
-                                value,
-                                font_size,
-                                font_family,
-                                alignment,
-                                max_width: bounds.0,
-                            },
-                            position: Rect {
-                                left: 0.0,
-                                top: 0.0,
-                                right: bounds.0 as f64,
-                                bottom: bounds.1 as f64,
-                            },
-                            opacity: 0.0,
-                        }
-                    }
-                    "Header" | "header" | "NH" | "nh" | "SH" | "sh" | "H" | "h" => {
-                        let value = match values.remove("value") {
-                            Some(val) => val,
-                            None => {
-                                return Err(Simple::custom(
-                                    span,
-                                    format!(
-                                        "A value is required for your text, try adding one\n{}: \
-                                         {}(value: \"Your Text\");",
-                                        name, type_
-                                    ),
-                                ))
-                            }
-                        };
-                        let font_family = values
-                            .remove("font_family")
-                            .unwrap_or(String::from("Helvetica"));
-                        let alignment = match match values.remove("alignment") {
-                            Some(a) => Some(a),
-                            None => values.remove("align"),
-                        }
-                        .as_deref()
-                        {
-                            Some("left") | Some("Left") => layout::Alignment::Left,
-                            Some("right") | Some("Right") => layout::Alignment::Right,
-                            _ => layout::Alignment::Center,
-                        };
-                        let font_size = values
-                            .remove("font_size")
-                            .map_or_else(|| 72.0, |k| k.parse().unwrap());
-                        let bounds = match bounds_fn(&value, font_size, &font_family, alignment) {
-                            Ok(bounds) => bounds,
-                            Err(e) => return Err(Simple::custom(span, e.to_string())),
-                        };
-                        Object {
-                            obj_type: ObjectType::Text {
-                                value,
-                                font_size,
-                                font_family,
-                                alignment,
-                                max_width: bounds.0,
-                            },
-                            position: Rect {
-                                left: 0.0,
-                                top: 0.0,
-                                right: bounds.0 as f64,
-                                bottom: bounds.1 as f64,
-                            },
-                            opacity: 0.0,
-                        }
-                    }
-                    "Point" | "point" | "Circle" | "circle" => Object {
-                        obj_type: ObjectType::Point,
+                let obj = match T::construct(name.clone(), type_, &mut values) {
+                    Ok(o) => o,
+                    Err(e) => return Err(Simple::custom(span, e)),
+                };
+                unsafe { &mut *unused_objects }.insert(
+                    name,
+                    SlideObject {
+                        obj_type: obj,
                         position: Rect {
                             left: 0.0,
-                            top: 0.0,
                             right: 0.0,
+                            top: 0.0,
                             bottom: 0.0,
                         },
                         opacity: 0.0,
                     },
-                    e => {
-                        return Err(Simple::custom(
-                            span,
-                            format!("Object cannot have type {}", e),
-                        ))
-                    }
-                };
-                unsafe { &mut *unused_objects }.insert(name, obj);
+                );
                 Ok(())
             })
             .ignored());
@@ -515,11 +399,18 @@ where
                     ));
                 };
                 if let Some(obj) = (&mut *objects_in_view).get_mut(&name) {
-                    let pos_rect_from = get_pos!(from, obj.1, *obj.0);
-                    let pos_rect_goto = get_pos!(goto, vbx, *obj.0);
+                    let mut obj_slide = (*(obj.0)).clone();
+                    let bounds = match obj_slide.obj_type.bounds(vbx.width(), vbx.height()) {
+                        Ok(b) => b,
+                        Err(e) => return Err(Simple::custom(span, e)),
+                    };
+                    obj_slide.position.right = bounds.0;
+                    obj_slide.position.bottom = bounds.1;
+                    let pos_rect_from = get_pos!(from, obj.1, obj_slide);
+                    let pos_rect_goto = get_pos!(goto, vbx, obj_slide);
                     obj.1 = vbx;
                     new_slide.0.push(Cmd(
-                        (*(obj.0)).clone(),
+                        obj_slide,
                         easing_fn(pos_rect_from.0, pos_rect_goto.0, delay)
                             .zip(easing_fn(pos_rect_from.1, pos_rect_goto.1, delay))
                             .zip(opacity_fn(1.0f32, 1.0f32, delay)),
@@ -532,13 +423,20 @@ where
                             return Err(Simple::custom(
                                 span,
                                 format!("Could not find object {name}"),
-                            ))
+                            ));
                         }
                     };
-                    let pos_rect_from = get_pos!(from, vbx, obj);
-                    let pos_rect_goto = get_pos!(goto, vbx, obj);
+                    let mut obj_slide = obj.clone();
+                    let bounds = match obj_slide.obj_type.bounds(vbx.width(), vbx.height()) {
+                        Ok(b) => b,
+                        Err(e) => return Err(Simple::custom(span, e)),
+                    };
+                    obj_slide.position.right = bounds.0;
+                    obj_slide.position.bottom = bounds.1;
+                    let pos_rect_from = get_pos!(from, vbx, obj_slide);
+                    let pos_rect_goto = get_pos!(goto, vbx, obj_slide);
                     new_slide.0.push(Cmd(
-                        obj.clone(),
+                        obj_slide,
                         easing_fn(pos_rect_from.0, pos_rect_goto.0, delay)
                             .zip(easing_fn(pos_rect_from.1, pos_rect_goto.1, delay))
                             .zip(opacity_fn(0.0f32, 1.0f32, delay)),

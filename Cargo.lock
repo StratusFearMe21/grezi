@@ -620,6 +620,7 @@ dependencies = [
 name = "grezi"
 version = "1.0.0"
 dependencies = [
+ "ahash",
  "anyhow",
  "ariadne",
  "cassowary",
