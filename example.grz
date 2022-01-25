@@ -1,5 +1,3 @@
-FONT_SIZE: 24;
-
 VerticalViewbox: Size[0] ^
 	1:2,
 	1:2,

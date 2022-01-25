@@ -273,7 +273,8 @@ pub fn tokenizer(data: &[u8]) -> (Option<Vec<Token>>, Vec<Simple<u8>>) {
     let index_parser = int_parser
         .from_str::<usize>()
         .unwrapped()
-        .delimited_by(b'[', b']');
+        .delimited_by(b'[', b']')
+        .recover_with(nested_delimiters(b'[', b']', [], |_| 0));
 
     let edge_parser = choice((
         just(b'>').to(LineUpGeneral::Right),
@@ -294,8 +295,10 @@ pub fn tokenizer(data: &[u8]) -> (Option<Vec<Token>>, Vec<Simple<u8>>) {
             )
             .separated_by(just(b','))
             .allow_trailing()
+            .recover_with(skip_until([b','], |_| Vec::new()))
             .padded()
             .delimited_by(b'{', b'}')
+            .recover_with(nested_delimiters(b'{', b'}', [], |_| Vec::new()))
             .map_with_span(Token::Slide),
         ident_parser
             .then(index_parser.padded())
@@ -333,6 +336,7 @@ pub fn tokenizer(data: &[u8]) -> (Option<Vec<Token>>, Vec<Simple<u8>>) {
                 .padded()
                 .separated_by(just(b','))
                 .allow_trailing()
+                .recover_with(skip_until([b','], |_| Vec::new()))
                 .padded(),
             )
             .then_ignore(just(b']'))
@@ -343,8 +347,10 @@ pub fn tokenizer(data: &[u8]) -> (Option<Vec<Token>>, Vec<Simple<u8>>) {
                     .padded()
                     .separated_by(just(b','))
                     .allow_trailing()
+                    .recover_with(skip_until([b','], |_| Vec::new()))
                     .padded()
-                    .delimited_by(b'(', b')'),
+                    .delimited_by(b'(', b')')
+                    .recover_with(nested_delimiters(b'(', b')', [], |_| Vec::new())),
             )
             .map_with_span(Token::Obj),
         ident_parser.map(Token::Register),

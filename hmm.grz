@@ -1,7 +1,0 @@
-Object: Paragraph(
-	value: "Bruh",
-);
-
-{
-	Object: Size[0];....,
-};

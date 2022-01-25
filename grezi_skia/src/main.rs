@@ -76,7 +76,7 @@ impl grezi::Object for ObjectType {
                 };
                 let font_family = values
                     .remove("font_family")
-                    .unwrap_or(String::from("Helvetica"));
+                    .unwrap_or(unsafe { values.remove("FONT_FAMILY").unwrap_unchecked() });
                 let alignment = match match values.remove("alignment") {
                     Some(a) => Some(a),
                     None => values.remove("align"),
@@ -87,9 +87,10 @@ impl grezi::Object for ObjectType {
                     Some("right") | Some("Right") => TextAlign::Right,
                     _ => TextAlign::Center,
                 };
-                let font_size = values
-                    .remove("font_size")
-                    .map_or_else(|| Ok(48.0), |k| k.parse())?;
+                let font_size = values.remove("font_size").map_or_else(
+                    || unsafe { values.remove("FONT_SIZE").unwrap_unchecked().parse::<f32>() },
+                    |k| k.parse(),
+                )?;
                 Ok(ObjectType::Text {
                     value,
                     font_size,
@@ -112,7 +113,7 @@ impl grezi::Object for ObjectType {
                 };
                 let font_family = values
                     .remove("font_family")
-                    .unwrap_or(String::from("Helvetica"));
+                    .unwrap_or(unsafe { values.remove("HEADER_FONT_FAMILY").unwrap_unchecked() });
                 let alignment = match match values.remove("alignment") {
                     Some(a) => Some(a),
                     None => values.remove("align"),
@@ -123,9 +124,21 @@ impl grezi::Object for ObjectType {
                     Some("right") | Some("Right") => TextAlign::Right,
                     _ => TextAlign::Center,
                 };
-                let font_size = values
-                    .remove("font_size")
-                    .map_or_else(|| Ok(72.0), |k| k.parse())?;
+                let font_size = values.remove("font_size").map_or_else(
+                    || {
+                        Ok(unsafe {
+                            values
+                                .remove("HEADER_FONT_SIZE_ADD")
+                                .unwrap_unchecked()
+                                .parse::<f32>()?
+                                + values
+                                    .remove("FONT_SIZE")
+                                    .unwrap_unchecked()
+                                    .parse::<f32>()?
+                        })
+                    },
+                    |k| k.parse(),
+                )?;
                 Ok(ObjectType::Text {
                     value,
                     font_size,
