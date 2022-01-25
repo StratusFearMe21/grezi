@@ -1,27 +1,5 @@
-[package]
-name = "grezi"
-version = "1.0.0"
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-[lib]
-name = "grezi"
-
-[dependencies]
-ariadne = "*"
-chumsky = "*"
-memmap = "*"
-anyhow = "*"
-skulpin = { version = "*", features = [
-  "skia-textlayout",
-  "winit-latest",
-  "winit-app",
-] }
-easing = { git = "https://github.com/StratusFearMe21/easing" }
-num-traits = "*"
-ahash = "*"
-structopt = "*"
-cassowary = "*"
+[workspace]
+members = ["lib_grezi", "grezi_skia"]
 
 [profile.release]
 lto = "fat"

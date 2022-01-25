@@ -4,6 +4,7 @@ use std::{
 };
 
 use anyhow::{bail, Context};
+use ariadne::Label;
 use grezi::{layout::Rect, AHashMap, Slide};
 use skulpin::{
     rafx::api::RafxExtents2D,
@@ -28,9 +29,9 @@ struct Opts {
     #[structopt(short, long, default_value = "0.5")]
     /// The delay between slides in seconds
     delay: f64,
-    #[structopt(short, long)]
-    /// Active VSYNC
-    vsync: bool,
+    #[structopt(long)]
+    /// Deactivate VSYNC
+    no_vsync: bool,
     /// The file for Grezi to open
     file: String,
 }
@@ -55,6 +56,8 @@ pub enum ObjectType {
 }
 
 impl grezi::Object for ObjectType {
+    type Error = anyhow::Error;
+
     fn construct(
         name: String,
         type_: String,
@@ -67,7 +70,7 @@ impl grezi::Object for ObjectType {
                     None => {
                         bail!(
                             "A value is required for your text, try adding one\n{name}: \
-                                         {type_}(value: \"Your Text\");"
+                             {type_}(value: \"Your Text\");"
                         );
                     }
                 };
@@ -100,8 +103,8 @@ impl grezi::Object for ObjectType {
                     Some(val) => val,
                     None => {
                         bail!(
-                            "A value is required for your text, try adding one\n{}: \
-                                         {}(value: \"Your Text\");",
+                            "A value is required for your text, try adding one\n{}: {}(value: \
+                             \"Your Text\");",
                             name,
                             type_
                         )
@@ -132,13 +135,21 @@ impl grezi::Object for ObjectType {
                 })
             }
             "Point" | "point" | "Circle" | "circle" => Ok(ObjectType::Point),
+            /*
+            "Image" | "image" | "Picture" | "picture" => {
+                let image = skulpin::skia_safe::Bitmap::new();
+                Ok(ObjectType::Image {
+                    data: skulpin::skia_safe::Bitmap::
+                })
+            }
+            */
             e => {
                 bail!("Object cannot have type {}", e)
             }
         }
     }
 
-    fn bounds(&mut self, w: f64, _: f64) -> anyhow::Result<(f64, f64)> {
+    fn bounds(&mut self, w: f64, h: f64) -> anyhow::Result<(f64, f64)> {
         match self {
             ObjectType::Text {
                 value,
@@ -169,7 +180,11 @@ impl grezi::Object for ObjectType {
                     + 10.0;
                 *max_width = if width > w as f32 { w as f32 } else { width };
                 built.layout(*max_width);
-                Ok((built.max_width() as f64, built.height() as f64))
+                if built.height() > h as f32 {
+                    bail!("This text overflows the slide. text should be less than {h} pixels high")
+                } else {
+                    Ok((built.max_width() as f64, built.height() as f64))
+                }
             }
             ObjectType::Point => unimplemented!(),
         }
@@ -194,6 +209,29 @@ fn main() -> anyhow::Result<()> {
         // dbg!(windowed_context.window().inner_size().height) as u16
         bottom: logical_size.height as f64,
     };
+    let font_mgr = unsafe { FONT_CACHE.write(FontCollection::new()) };
+    font_mgr.set_default_font_manager(FontMgr::default(), None);
+    let mut slideshow = match grezi::file_to_tokens(
+        &map,
+        size,
+        easing::cubic_inout,
+        easing::cubic_inout,
+        opts.fps * opts.delay,
+    ) {
+        Ok(slides) => slides,
+        Err(errors) => {
+            let mut report = ariadne::Report::build(ariadne::ReportKind::Error, (), 0);
+            for e in errors {
+                report = report
+                    .with_label(Label::new(e.span()).with_message(format!("{:?}", e.reason())))
+                    .with_message(e.label().unwrap_or("Unknown Error"))
+            }
+            report.finish().eprint(ariadne::Source::from(unsafe {
+                std::str::from_utf8_unchecked(map.as_ref())
+            }))?;
+            bail!("Failed to compile presentation")
+        }
+    };
     let event_loop = EventLoop::new();
     let winit_window = WindowBuilder::new()
         .with_title("Grezi")
@@ -207,16 +245,6 @@ fn main() -> anyhow::Result<()> {
         height: window_size.height,
     };
     let mut s_factor = winit_window.scale_factor();
-    let font_mgr = unsafe { FONT_CACHE.write(FontCollection::new()) };
-    font_mgr.set_default_font_manager(FontMgr::default(), None);
-
-    let mut slideshow = grezi::file_to_tokens(
-        &map,
-        size,
-        easing::cubic_inout,
-        easing::cubic_inout,
-        opts.fps * opts.delay,
-    )?;
     #[cfg(debug_assertions)]
     for i in slideshow.iter_mut() {
         for j in i.0.iter_mut() {
@@ -233,7 +261,7 @@ fn main() -> anyhow::Result<()> {
             visible_range,
             skulpin::skia_safe::matrix::ScaleToFit::Center,
         ))
-        .vsync_enabled(opts.vsync)
+        .vsync_enabled(!opts.no_vsync)
         .build(&winit_window, extents)?;
     let mut index = 0;
     let mut drawing = true;
@@ -339,18 +367,24 @@ pub fn draw<I: Iterator<Item = f64>, O: Iterator<Item = f32>>(
     collection: &FontCollection,
 ) {
     for cmd in slide.0.iter() {
-        match &cmd.0.obj_type {
+        match cmd.0.obj_type {
             ObjectType::Text {
-                value,
+                ref value,
                 font_size,
-                font_family,
+                ref font_family,
                 alignment,
                 max_width,
             } => {
+                let workrect = skulpin::skia_safe::Rect::new(
+                    cmd.0.position.left as f32,
+                    cmd.0.position.top as f32,
+                    cmd.0.position.right as f32,
+                    cmd.0.position.bottom as f32,
+                );
                 let typeface = Typeface::new(font_family, FontStyle::normal());
                 let mut text_style = TextStyle::new();
                 text_style
-                    .set_font_size(*font_size)
+                    .set_font_size(font_size)
                     .set_font_families(&[font_family])
                     .set_typeface(typeface)
                     .set_color(skulpin::skia_safe::Color::from_argb(
@@ -360,36 +394,21 @@ pub fn draw<I: Iterator<Item = f64>, O: Iterator<Item = f32>>(
                         255,
                     ));
                 let mut style = ParagraphStyle::new();
-                style.set_text_align(*alignment).set_text_style(&text_style);
+                style.set_text_align(alignment).set_text_style(&text_style);
                 let mut paragraph =
                     skulpin::skia_safe::textlayout::ParagraphBuilder::new(&style, collection);
                 paragraph.add_text(value);
                 let mut built = paragraph.build();
-                built.layout(*max_width);
-                built.paint(
-                    canvas,
-                    (cmd.0.position.left as f32, cmd.0.position.top as f32),
-                );
+                built.layout(max_width);
+                built.paint(canvas, (workrect.left, workrect.top));
                 #[cfg(debug_assertions)]
                 {
                     let paint = skulpin::skia_safe::Paint::new(
                         skulpin::skia_safe::Color4f::new(1.0, 1.0, 0.5, 0.5),
                         None,
                     );
-                    canvas.draw_rect(
-                        skulpin::skia_safe::Rect::new(
-                            cmd.0.position.left as f32,
-                            cmd.0.position.top as f32,
-                            cmd.0.position.right as f32,
-                            cmd.0.position.bottom as f32,
-                        ),
-                        &paint,
-                    );
-                    canvas.draw_circle(
-                        (cmd.0.position.left as f32, cmd.0.position.top as f32),
-                        20.0,
-                        &paint,
-                    );
+                    canvas.draw_rect(workrect, &paint);
+                    canvas.draw_circle((workrect.left, workrect.top), 20.0, &paint);
                 }
             }
             _ => unimplemented!(),

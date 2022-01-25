@@ -492,7 +492,7 @@ checksum = "9ea835d29036a4087793836fa931b08837ad5e957da9e23886b29586fb9b6650"
 [[package]]
 name = "easing"
 version = "0.0.5"
-source = "git+https://github.com/StratusFearMe21/easing#66e9900b29cedd46a587aa89dc5903046218a0d1"
+source = "git+https://github.com/StratusFearMe21/easing#0460b4b44240dcf70c3f725ec7dbef2666bdce10"
 dependencies = [
  "num-traits",
 ]
@@ -618,23 +618,16 @@ dependencies = [
 
 [[package]]
 name = "grezi"
-version = "1.3.0"
+version = "1.2.0"
 dependencies = [
  "ahash",
- "cassowary",
- "chumsky",
- "num-traits",
-]
-
-[[package]]
-name = "grezi_skia"
-version = "1.3.0"
-dependencies = [
  "anyhow",
  "ariadne",
+ "cassowary",
+ "chumsky",
  "easing",
- "grezi",
  "memmap",
+ "num-traits",
  "skulpin",
  "structopt",
 ]
@@ -733,9 +726,9 @@ checksum = "830d08ce1d1d941e6b30645f1a0eb5643013d835ce3779a5fc208261dbe10f55"
 
 [[package]]
 name = "libc"
-version = "0.2.114"
+version = "0.2.113"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0005d08a8f7b65fb8073cb697aa0b12b631ed251ce73d862ce50eeb52ce3b50"
+checksum = "eef78b64d87775463c549fbd80e19249ef436ea3bf1de2a1eb7e717ec7fab1e9"
 
 [[package]]
 name = "libloading"
