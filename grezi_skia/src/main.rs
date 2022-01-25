@@ -236,7 +236,7 @@ fn main() -> anyhow::Result<()> {
             let mut report = ariadne::Report::build(ariadne::ReportKind::Error, (), 0);
             for e in errors {
                 report = report
-                    .with_label(Label::new(e.span()).with_message(format!("{:?}", e.reason())))
+                    .with_label(Label::new(e.span()).with_message(&e))
                     .with_message(e.label().unwrap_or("Unknown Error"))
             }
             report.finish().eprint(ariadne::Source::from(unsafe {
