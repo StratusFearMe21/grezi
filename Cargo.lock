@@ -619,7 +619,7 @@ dependencies = [
 
 [[package]]
 name = "grezi"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "ahash",
  "cassowary",
@@ -629,7 +629,7 @@ dependencies = [
 
 [[package]]
 name = "grezi_skia"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "anyhow",
  "ariadne",
@@ -642,7 +642,7 @@ dependencies = [
 
 [[package]]
 name = "grzfmt"
-version = "1.5.0"
+version = "1.6.0"
 dependencies = [
  "clap",
  "grezi",

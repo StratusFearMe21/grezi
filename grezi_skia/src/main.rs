@@ -386,6 +386,7 @@ pub fn draw<I: Iterator<Item = Vec4<f64>>, O: Iterator<Item = f64>>(
     collection: &FontCollection,
 ) {
     for cmd in slide.0.iter() {
+        #[cfg(debug_assertions)]
         let workrect = skulpin::skia_safe::Rect::new(
             cmd.0.position.x as f32,
             cmd.0.position.y as f32,
@@ -419,7 +420,7 @@ pub fn draw<I: Iterator<Item = Vec4<f64>>, O: Iterator<Item = f64>>(
                 paragraph.add_text(value);
                 let mut built = paragraph.build();
                 built.layout(max_width);
-                built.paint(canvas, (workrect.left, workrect.top));
+                built.paint(canvas, (cmd.0.position.x as f32, cmd.0.position.y as f32));
                 #[cfg(debug_assertions)]
                 {
                     let paint = skulpin::skia_safe::Paint::new(
