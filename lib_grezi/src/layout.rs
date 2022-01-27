@@ -4,23 +4,38 @@ use cassowary::strength::{REQUIRED, WEAK};
 use cassowary::WeightedRelation::*;
 use cassowary::{Constraint as CassowaryConstraint, Expression, Solver, Variable};
 
+/// The direction in which the viewbox's boxes go
 #[derive(Debug, Hash, Clone, PartialEq, Eq)]
 pub enum Direction {
+    /// Left to right
     Horizontal,
+    /// Top to bottom
     Vertical,
 }
 
+/// A Constraint decides how viewboxes are split. In the `.grz` format, the available constraints
+/// are
+/// - `1:2`: [`Constraint::Ratio`]
+/// - `50%`: [`Constraint::Percentage`]
+/// - `50+`: [`Constraint::Max`]
+/// - `50-`: [`Constraint::Min`]
+/// - `50`: [`Constraint::Length`]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Constraint {
-    // TODO: enforce range 0 - 100
+    /// Allocate this percentage of the box
     Percentage(f64),
+    /// Allocate this portion of the box
     Ratio(f64, f64),
+    /// Allocate exactly this amount of the box
     Length(f64),
+    /// Allocate at most this much of the box
     Max(f64),
+    /// Allocate at least this much of the box
     Min(f64),
 }
 
 impl Constraint {
+    /// Apply a constraint directly on a given length
     #[inline]
     pub fn apply(&self, length: f64) -> f64 {
         match *self {
@@ -33,16 +48,23 @@ impl Constraint {
     }
 }
 
+/// This is the space between boxes inside of a viewbox
 #[derive(Debug, Clone, PartialEq)]
 pub struct Margin {
+    /// Pads the boxes on the top and bottom
     pub vertical: f64,
+    /// Pads the boxes on the left and right
     pub horizontal: f64,
 }
 
+/// A raw, unsolved viewbox. You must use the [`Layout.split()`] method to solve the viewbox.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Layout {
+    /// The direction in which the boxes inside of the viewbox should go.
     direction: Direction,
+    /// The margin between the boxes inside of a viewbox
     margin: Margin,
+    /// Tells the solver how the boxes should be allocated inside of the viewbox
     constraints: Vec<Constraint>,
     /// Whether the last chunk of the computed layout should be expanded to fill the available
     /// space.
@@ -65,6 +87,7 @@ impl Default for Layout {
 }
 
 impl Layout {
+    /// Sets the constraints for the unsolved viewbox
     #[inline]
     pub fn constraints<C>(mut self, constraints: C) -> Layout
     where
@@ -74,6 +97,7 @@ impl Layout {
         self
     }
 
+    /// Sets the vertical and horizontal margins for the unsolved viewbox
     #[inline]
     pub fn margin(mut self, margin: f64) -> Layout {
         self.margin = Margin {
@@ -83,18 +107,21 @@ impl Layout {
         self
     }
 
+    /// Sets the horizontal margin of the unsolved viewbox
     #[inline]
     pub fn horizontal_margin(mut self, horizontal: f64) -> Layout {
         self.margin.horizontal = horizontal;
         self
     }
 
+    /// Sets the vertical margin of the unsolved viewbox
     #[inline]
     pub fn vertical_margin(mut self, vertical: f64) -> Layout {
         self.margin.vertical = vertical;
         self
     }
 
+    /// Sets the direction of the unsolved viewbox
     #[inline]
     pub fn direction(mut self, direction: Direction) -> Layout {
         self.direction = direction;
@@ -102,61 +129,61 @@ impl Layout {
     }
 
     /// Wrapper function around the cassowary-rs solver to be able to split a given
-    /// area into smaller ones based on the preferred widths or heights and the direction.
+    /// viewbox into smaller ones based on the constraints and the direction.
     ///
     /// # Examples
     /// ```
     /// # use grezi::layout::{Rect, Constraint, Direction, Layout};
     /// let chunks = Layout::default()
     ///     .direction(Direction::Vertical)
-    ///     .constraints([Constraint::Length(5), Constraint::Min(0)].as_ref())
+    ///     .constraints([Constraint::Length(5.0), Constraint::Min(0.0)].as_ref())
     ///     .split(Rect {
-    ///         x: 2,
-    ///         y: 2,
-    ///         width: 10,
-    ///         height: 10,
+    ///         left: 2.0,
+    ///         top: 2.0,
+    ///         right: 12.0,
+    ///         bottom: 12.0,
     ///     });
     /// assert_eq!(
     ///     chunks,
     ///     vec![
     ///         Rect {
-    ///             x: 2,
-    ///             y: 2,
-    ///             width: 10,
-    ///             height: 5
+    ///             left: 2.0,
+    ///             top: 2.0,
+    ///             right: 12.0,
+    ///             bottom: 7.0
     ///         },
     ///         Rect {
-    ///             x: 2,
-    ///             y: 7,
-    ///             width: 10,
-    ///             height: 5
+    ///             left: 2.0,
+    ///             top: 7.0,
+    ///             right: 12.0,
+    ///             bottom: 12.0
     ///         }
     ///     ]
     /// );
     ///
     /// let chunks = Layout::default()
     ///     .direction(Direction::Horizontal)
-    ///     .constraints([Constraint::Ratio(1, 3), Constraint::Ratio(2, 3)].as_ref())
+    ///     .constraints([Constraint::Ratio(1.0, 3.0), Constraint::Ratio(2.0, 3.0)].as_ref())
     ///     .split(Rect {
-    ///         x: 0,
-    ///         y: 0,
-    ///         width: 9,
-    ///         height: 2,
+    ///         left: 0.0,
+    ///         top: 0.0,
+    ///         right: 9.0,
+    ///         bottom: 2.0,
     ///     });
     /// assert_eq!(
     ///     chunks,
     ///     vec![
     ///         Rect {
-    ///             x: 0,
-    ///             y: 0,
-    ///             width: 3,
-    ///             height: 2
+    ///             left: 0.0,
+    ///             top: 0.0,
+    ///             right: 3.0,
+    ///             bottom: 2.0
     ///         },
     ///         Rect {
-    ///             x: 3,
-    ///             y: 0,
-    ///             width: 6,
-    ///             height: 2
+    ///             left: 3.0,
+    ///             top: 0.0,
+    ///             right: 9.0,
+    ///             bottom: 2.0
     ///         }
     ///     ]
     /// );
@@ -330,13 +357,17 @@ impl Element {
     }
 }
 
-/// A simple rectangle used in the computation of the layout and to give widgets an hint about the
+/// A simple rectangle used in the computation of the viewbox and to give objects a hint about the
 /// area they are supposed to render to.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Rect {
+    /// The x coordinate to the left of the [`Rect`]
     pub left: f64,
+    /// The y coordinate on top of the [`Rect`]
     pub top: f64,
+    /// The x coordinate to the right of the [`Rect`]
     pub right: f64,
+    /// The y coordinate on the bottom of the [`Rect`]
     pub bottom: f64,
 }
 
@@ -362,21 +393,25 @@ impl Rect {
         }
     }
 
+    /// Calculates the total area of the [`Rect`] (width * height)
     #[inline]
     pub fn area(self) -> f64 {
         self.width() * self.height()
     }
 
+    /// Calculates the width of the [`Rect`]
     #[inline]
     pub fn width(self) -> f64 {
         self.right - self.left
     }
 
+    /// Calculates the height of the [`Rect`]
     #[inline]
     pub fn height(self) -> f64 {
         self.bottom - self.top
     }
 
+    /// Applies a margin to the [`Rect`]
     #[inline]
     pub fn inner(self, margin: &Margin) -> Rect {
         if self.width() < 2.0 * margin.horizontal || self.height() < 2.0 * margin.vertical {
@@ -391,6 +426,7 @@ impl Rect {
         }
     }
 
+    /// Computes the [`Rect`] which encapsulates itself and another [`Rect`]
     #[inline]
     pub fn union(self, other: Rect) -> Rect {
         Rect {
@@ -401,6 +437,7 @@ impl Rect {
         }
     }
 
+    /// Computes the [`Rect`] which intersects itself and another [`Rect`]
     #[inline]
     pub fn intersection(self, other: Rect) -> Rect {
         Rect {
@@ -411,6 +448,7 @@ impl Rect {
         }
     }
 
+    /// Computes whether a [`Rect`] intersects another [`Rect`]
     #[inline]
     pub fn intersects(self, other: Rect) -> bool {
         self.left < other.right

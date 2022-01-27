@@ -19,6 +19,7 @@ use skulpin::{
     },
 };
 use structopt::StructOpt;
+use vek::Vec4;
 static mut FONT_CACHE: MaybeUninit<FontCollection> = MaybeUninit::uninit();
 
 #[derive(StructOpt)]
@@ -59,24 +60,22 @@ impl grezi::Object for ObjectType {
     type Error = anyhow::Error;
 
     fn construct(
-        name: String,
+        _: String,
         type_: String,
         values: &mut AHashMap<String, String>,
+        registers: &AHashMap<String, String>,
     ) -> anyhow::Result<Self> {
         match type_.as_str() {
             "Paragraph" | "paragraph" | "PP" | "pp" | "P" | "p" => {
                 let value = match values.remove("value") {
                     Some(val) => val,
                     None => {
-                        bail!(
-                            "A value is required for your text, try adding one\n{name}: \
-                             {type_}(value: \"Your Text\");"
-                        );
+                        bail!("A value is required for your text");
                     }
                 };
                 let font_family = values
                     .remove("font_family")
-                    .unwrap_or(unsafe { values.remove("FONT_FAMILY").unwrap_unchecked() });
+                    .unwrap_or(unsafe { registers.get("FONT_FAMILY").unwrap_unchecked().clone() });
                 let alignment = match match values.remove("alignment") {
                     Some(a) => Some(a),
                     None => values.remove("align"),
@@ -88,7 +87,13 @@ impl grezi::Object for ObjectType {
                     _ => TextAlign::Center,
                 };
                 let font_size = values.remove("font_size").map_or_else(
-                    || unsafe { values.remove("FONT_SIZE").unwrap_unchecked().parse::<f32>() },
+                    || unsafe {
+                        registers
+                            .get("FONT_SIZE")
+                            .unwrap_unchecked()
+                            .clone()
+                            .parse::<f32>()
+                    },
                     |k| k.parse(),
                 )?;
                 Ok(ObjectType::Text {
@@ -103,17 +108,15 @@ impl grezi::Object for ObjectType {
                 let value = match values.remove("value") {
                     Some(val) => val,
                     None => {
-                        bail!(
-                            "A value is required for your text, try adding one\n{}: {}(value: \
-                             \"Your Text\");",
-                            name,
-                            type_
-                        )
+                        bail!("A value is required for your text")
                     }
                 };
-                let font_family = values
-                    .remove("font_family")
-                    .unwrap_or(unsafe { values.remove("HEADER_FONT_FAMILY").unwrap_unchecked() });
+                let font_family = values.remove("font_family").unwrap_or(unsafe {
+                    registers
+                        .get("HEADER_FONT_FAMILY")
+                        .unwrap_unchecked()
+                        .clone()
+                });
                 let alignment = match match values.remove("alignment") {
                     Some(a) => Some(a),
                     None => values.remove("align"),
@@ -127,13 +130,15 @@ impl grezi::Object for ObjectType {
                 let font_size = values.remove("font_size").map_or_else(
                     || {
                         Ok(unsafe {
-                            values
-                                .remove("HEADER_FONT_SIZE_ADD")
+                            registers
+                                .get("HEADER_FONT_SIZE_ADD")
                                 .unwrap_unchecked()
+                                .clone()
                                 .parse::<f32>()?
-                                + values
-                                    .remove("FONT_SIZE")
+                                + registers
+                                    .get("FONT_SIZE")
                                     .unwrap_unchecked()
+                                    .clone()
                                     .parse::<f32>()?
                         })
                     },
@@ -150,10 +155,10 @@ impl grezi::Object for ObjectType {
             "Point" | "point" | "Circle" | "circle" => Ok(ObjectType::Point),
             /*
             "Image" | "image" | "Picture" | "picture" => {
-                let image = skulpin::skia_safe::Bitmap::new();
-                Ok(ObjectType::Image {
-                    data: skulpin::skia_safe::Bitmap::
-                })
+            let image = skulpin::skia_safe::Bitmap::new();
+            Ok(ObjectType::Image {
+            data: skulpin::skia_safe::Bitmap::
+            })
             }
             */
             e => {
@@ -224,11 +229,12 @@ fn main() -> anyhow::Result<()> {
     };
     let font_mgr = unsafe { FONT_CACHE.write(FontCollection::new()) };
     font_mgr.set_default_font_manager(FontMgr::default(), None);
-    let mut slideshow = match grezi::file_to_tokens(
+    let mut slideshow = match grezi::file_to_slideshow(
         &map,
         size,
-        easing::cubic_inout,
-        easing::cubic_inout,
+        grezi::easing::cubic_rect_inout,
+        grezi::easing::cubic_single_inout,
+        255.0,
         opts.fps * opts.delay,
     ) {
         Ok(slides) => slides,
@@ -374,12 +380,18 @@ fn main() -> anyhow::Result<()> {
     });
 }
 
-pub fn draw<I: Iterator<Item = f64>, O: Iterator<Item = f32>>(
+pub fn draw<I: Iterator<Item = Vec4<f64>>, O: Iterator<Item = f64>>(
     slide: &Slide<ObjectType, I, O>,
     canvas: &mut skulpin::skia_safe::Canvas,
     collection: &FontCollection,
 ) {
     for cmd in slide.0.iter() {
+        let workrect = skulpin::skia_safe::Rect::new(
+            cmd.0.position.x as f32,
+            cmd.0.position.y as f32,
+            cmd.0.position.z as f32,
+            cmd.0.position.w as f32,
+        );
         match cmd.0.obj_type {
             ObjectType::Text {
                 ref value,
@@ -388,12 +400,6 @@ pub fn draw<I: Iterator<Item = f64>, O: Iterator<Item = f32>>(
                 alignment,
                 max_width,
             } => {
-                let workrect = skulpin::skia_safe::Rect::new(
-                    cmd.0.position.left as f32,
-                    cmd.0.position.top as f32,
-                    cmd.0.position.right as f32,
-                    cmd.0.position.bottom as f32,
-                );
                 let typeface = Typeface::new(font_family, FontStyle::normal());
                 let mut text_style = TextStyle::new();
                 text_style
@@ -401,7 +407,7 @@ pub fn draw<I: Iterator<Item = f64>, O: Iterator<Item = f32>>(
                     .set_font_families(&[font_family])
                     .set_typeface(typeface)
                     .set_color(skulpin::skia_safe::Color::from_argb(
-                        (cmd.0.opacity * 255.0) as u8,
+                        cmd.0.opacity as u8,
                         255,
                         255,
                         255,
