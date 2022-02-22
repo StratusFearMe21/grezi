@@ -32,14 +32,14 @@
 //!         Ok((50.0, 50.0))
 //!     }
 //!     fn construct(
-//!         name: String,
-//!         type_: String,
+//!         name: &str,
+//!         type_: &str,
 //!         values: &mut grezi::AHashMap<String, String>,
-//!         _: &grezi::AHashMap<String, String>
+//!         _: &grezi::AHashMap<&str, &str>
 //!     ) -> Result<Self, Self::Error> {
 //!         Ok(Self {
-//!             name,
-//!             type_,
+//!             name: name.to_string(),
+//!             type_: type_.to_string(),
 //!             values: values.clone()
 //!         })
 //!     }
@@ -80,8 +80,9 @@ use ahash::RandomState;
 /// A type alias for a [`std::collections::HashMap`] which uses [`ahash`] as it's hasher.
 pub type AHashMap<K, V> = std::collections::HashMap<K, V, RandomState>;
 use chumsky::prelude::*;
+use glam::DVec4;
 use layout::{Constraint, Layout, Rect};
-use vek::Vec4;
+use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 
 //--> Macros
 
@@ -112,7 +113,7 @@ macro_rules! get_pos {
     };
 }
 
-//--> Enums
+//--> Types
 
 /// A method of splitting the screen a certain way
 type Viewbox = (
@@ -128,6 +129,10 @@ type SlideType = Vec<(
     ),
 )>;
 
+type Slideshow<K, U, C> = Result<Vec<Slide<K, U, C>>, Vec<Simple<u8>>>;
+
+//--> Enums
+
 /// This is the AST of the "grz" format
 #[derive(Debug, PartialEq)]
 pub enum Token {
@@ -140,7 +145,7 @@ pub enum Token {
     /// Objects on the slide
     Obj(
         /// The name of the object
-        ((String, String), Vec<(String, String)>),
+        ((String, String), AHashMap<String, String>),
         Range<usize>,
     ),
     /// The slide itself
@@ -154,7 +159,7 @@ pub enum Token {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-/// A corner or an edge are made up of 2 ['LineUpGeneral'] values.
+/// A corner or an edge are made up of 2 [`LineUpGeneral`] values.
 pub enum LineUpGeneral {
     /// To the left
     Left,
@@ -225,10 +230,10 @@ pub trait Object: std::fmt::Debug + Sized {
 
     /// Constructs an object based on it's name, type, and associated keys/values.
     fn construct(
-        name: String,
-        type_: String,
+        name: &str,
+        type_: &str,
         values: &mut AHashMap<String, String>,
-        registers: &AHashMap<String, String>,
+        registers: &AHashMap<&str, &str>,
     ) -> Result<Self, Self::Error>;
 }
 
@@ -240,37 +245,43 @@ pub struct SlideObject<T: Object + Clone> {
     /// The type of the object
     pub obj_type: T,
     /// The current position of the object
-    pub position: Vec4<f64>,
+    pub position: DVec4,
     /// The current opacity of the object
     pub opacity: f64,
 }
 
 /// A slide
-pub struct Slide<T: Object + Clone, I: Iterator<Item = Vec4<f64>>, O: Iterator<Item = f64>>(
+pub struct Slide<T: Object + Clone, I: Iterator<Item = DVec4>, O: Iterator<Item = f64>>(
     pub Vec<Cmd<T, I, O>>,
 );
 
-impl<T: Object + Clone, I: Iterator<Item = Vec4<f64>>, O: Iterator<Item = f64>> Slide<T, I, O> {
+impl<T: Object + Clone, I: Iterator<Item = DVec4>, O: Iterator<Item = f64>> Slide<T, I, O> {
     /// Steps the entire slide forward, returning if anything changed.
     pub fn step(&mut self) -> bool {
-        for f in self.0.iter_mut().map(|f| f.step()) {
-            if !f {
-                return false;
-            }
-        }
+        self.0.par_iter_mut().all(|f| f.step());
         true
     }
 }
 
 /// Commands are used to draw and move objects on the screen
-pub struct Cmd<T: Object + Clone, I: Iterator<Item = Vec4<f64>>, O: Iterator<Item = f64>>(
+pub struct Cmd<T: Object + Clone, I: Iterator<Item = DVec4>, O: Iterator<Item = f64>>(
     /// The object to add
     pub SlideObject<T>,
     /// Easing for (x, y, opacity)
     pub Zip<I, O>,
 );
 
-impl<T: Object + Clone, I: Iterator<Item = Vec4<f64>>, O: Iterator<Item = f64>> Cmd<T, I, O> {
+unsafe impl<T: Object + Clone, I: Iterator<Item = DVec4>, O: Iterator<Item = f64>> Send
+    for Cmd<T, I, O>
+{
+}
+
+unsafe impl<T: Object + Clone, I: Iterator<Item = DVec4>, O: Iterator<Item = f64>> Sync
+    for Cmd<T, I, O>
+{
+}
+
+impl<T: Object + Clone, I: Iterator<Item = DVec4>, O: Iterator<Item = f64>> Cmd<T, I, O> {
     /// Step the given command forward
     pub fn step(&mut self) -> bool {
         if let Some(e) = self.1.next() {
@@ -285,7 +296,7 @@ impl<T: Object + Clone, I: Iterator<Item = Vec4<f64>>, O: Iterator<Item = f64>> 
 
 //--> Private Functions
 
-fn fold_lineup(line_up: (LineUpGeneral, LineUpGeneral)) -> LineUp {
+fn fold_lineup(line_up: &(LineUpGeneral, LineUpGeneral)) -> LineUp {
     match line_up.0 {
         LineUpGeneral::Center => match line_up.1 {
             LineUpGeneral::Center => LineUp::CenterCenter,
@@ -356,7 +367,7 @@ pub fn tokenizer(data: &[u8]) -> (Option<Vec<Token>>, Vec<Simple<u8>>) {
     let index_parser = int_parser
         .from_str::<usize>()
         .unwrapped()
-        .delimited_by(b'[', b']')
+        .delimited_by(just(b'['), just(b']'))
         .recover_with(nested_delimiters(b'[', b']', [], |_| 0));
 
     let edge_parser = choice((
@@ -380,7 +391,7 @@ pub fn tokenizer(data: &[u8]) -> (Option<Vec<Token>>, Vec<Simple<u8>>) {
             .allow_trailing()
             .padded()
             .recover_with(skip_until([b','], |_| Vec::new()))
-            .delimited_by(b'{', b'}')
+            .delimited_by(just(b'{'), just(b'}'))
             .recover_with(nested_delimiters(b'{', b'}', [], |_| Vec::new()))
             .map_with_span(Token::Slide),
         ident_parser
@@ -432,8 +443,9 @@ pub fn tokenizer(data: &[u8]) -> (Option<Vec<Token>>, Vec<Simple<u8>>) {
                     .allow_trailing()
                     .padded()
                     .recover_with(skip_until([b','], |_| Vec::new()))
-                    .delimited_by(b'(', b')')
-                    .recover_with(nested_delimiters(b'(', b')', [], |_| Vec::new())),
+                    .delimited_by(just(b'('), just(b')'))
+                    .recover_with(nested_delimiters(b'(', b')', [], |_| Vec::new()))
+                    .collect::<AHashMap<String, String>>(),
             )
             .map_with_span(Token::Obj),
         ident_parser.map(Token::Register),
@@ -448,30 +460,24 @@ pub fn tokenizer(data: &[u8]) -> (Option<Vec<Token>>, Vec<Simple<u8>>) {
 
 /// Converts a `.grz` file into a full slide show made up of commands. Commands contain the object
 /// to be drawn as well as the iterator deciding where objects actually go to.
-pub fn file_to_slideshow<
-    U: Iterator<Item = Vec4<f64>>,
-    C: Iterator<Item = f64>,
-    K: Object + Clone,
->(
+pub fn file_to_slideshow<U: Iterator<Item = DVec4>, C: Iterator<Item = f64>, K: Object + Clone>(
     file: &[u8],
     size: Rect,
-    easing_fn: impl Fn(Vec4<f64>, Vec4<f64>, f64) -> U,
+    easing_fn: impl Fn(DVec4, DVec4, f64) -> U,
     opacity_fn: impl Fn(f64, f64, f64) -> C,
     opacity_steps: f64,
     delay: f64,
-) -> Result<Vec<Slide<K, U, C>>, Vec<Simple<u8>>> {
-    let mut layouts: AHashMap<String, Vec<Rect>> = AHashMap::default();
-    let mut unused_objects: AHashMap<String, SlideObject<K>> = AHashMap::default();
-    let mut objects_in_view: AHashMap<String, (*mut SlideObject<K>, Rect)> = AHashMap::default();
+) -> Slideshow<K, U, C> {
+    let mut layouts: AHashMap<&str, Vec<Rect>> = AHashMap::default();
+    let mut unused_objects: AHashMap<&str, SlideObject<K>> = AHashMap::default();
+    let mut objects_in_view: AHashMap<&str, (*const SlideObject<K>, Rect)> = AHashMap::default();
     let mut slides: Vec<Slide<K, U, C>> = Vec::new();
-    let mut registers: AHashMap<String, String> = AHashMap::default();
-    registers.insert(String::from("FONT_SIZE"), String::from("48"));
-    registers.insert(String::from("HEADER_FONT_SIZE_ADD"), String::from("24"));
-    registers.insert(String::from("FONT_FAMILY"), String::from("Helvetica"));
-    registers.insert(
-        String::from("HEADER_FONT_FAMILY"),
-        String::from("Helvetica"),
-    );
+    let mut registers: AHashMap<&str, &str> = AHashMap::default();
+    registers.insert("FONT_SIZE", "48");
+    registers.insert("HEADER_FONT_SIZE_ADD", "24");
+    registers.insert("FONT_FAMILY", "Helvetica");
+    registers.insert("HEADER_FONT_FAMILY", "Helvetica");
+    registers.insert("VIEWBOX_MARGIN", "50");
     let mut errors = Vec::new();
 
     let tokens = match tokenizer(file) {
@@ -482,14 +488,14 @@ pub fn file_to_slideshow<
         (None, e) => return Err(e),
     };
 
-    for i in tokens {
+    for i in tokens.iter() {
         match i {
             Token::Slide(cmds, span) => unsafe {
                 let mut new_slide = Slide(Vec::with_capacity(cmds.len()));
-                let mut modified_names: Vec<String> = Vec::with_capacity(cmds.len());
-                for (((name, split), split_index), (from, goto)) in cmds.into_iter() {
-                    let vbx = if let Some(rect) = layouts.get(&split) {
-                        rect[split_index]
+                let mut modified_names: Vec<&str> = Vec::with_capacity(cmds.len());
+                for (((name, split), split_index), (from, goto)) in cmds.iter() {
+                    let vbx = if let Some(rect) = layouts.get(split.as_str()) {
+                        rect[*split_index]
                     } else if split == "Size" {
                         size
                     } else {
@@ -499,19 +505,19 @@ pub fn file_to_slideshow<
                         ));
                         continue;
                     };
-                    if let Some(obj) = objects_in_view.get_mut(&name) {
+                    if let Some(obj) = objects_in_view.get_mut(name.as_str()) {
                         let obj_slide = (*(obj.0)).clone();
                         let w = obj_slide.position.z - obj_slide.position.x;
                         let h = obj_slide.position.w - obj_slide.position.y;
                         let pos_rect_from_xy = get_pos!(fold_lineup(from), obj.1, (w, h));
                         let pos_rect_goto_xy = get_pos!(fold_lineup(goto), vbx, (w, h));
-                        let pos_rect_from = Vec4::new(
+                        let pos_rect_from = DVec4::new(
                             pos_rect_from_xy.0,
                             pos_rect_from_xy.1,
                             pos_rect_from_xy.0 + w,
                             pos_rect_from_xy.1 + h,
                         );
-                        let pos_rect_goto = Vec4::new(
+                        let pos_rect_goto = DVec4::new(
                             pos_rect_goto_xy.0,
                             pos_rect_goto_xy.1,
                             pos_rect_goto_xy.0 + w,
@@ -528,7 +534,7 @@ pub fn file_to_slideshow<
                         ));
                         modified_names.push(name);
                     } else {
-                        let obj = match unused_objects.get(&name) {
+                        let obj = match unused_objects.get(name.as_str()) {
                             Some(obj) => obj,
                             None => {
                                 errors.push(Simple::custom(
@@ -550,13 +556,13 @@ pub fn file_to_slideshow<
                         obj_slide.position.w = bounds.1;
                         let pos_rect_from_xy = get_pos!(fold_lineup(from), vbx, bounds);
                         let pos_rect_goto_xy = get_pos!(fold_lineup(goto), vbx, bounds);
-                        let pos_rect_from = Vec4::new(
+                        let pos_rect_from = DVec4::new(
                             pos_rect_from_xy.0,
                             pos_rect_from_xy.1,
                             pos_rect_from_xy.0 + bounds.0,
                             pos_rect_from_xy.1 + bounds.1,
                         );
-                        let pos_rect_goto = Vec4::new(
+                        let pos_rect_goto = DVec4::new(
                             pos_rect_goto_xy.0,
                             pos_rect_goto_xy.1,
                             pos_rect_goto_xy.0 + bounds.0,
@@ -570,8 +576,8 @@ pub fn file_to_slideshow<
                                 delay,
                             )),
                         ));
-                        modified_names.push(name.clone());
-                        match new_slide.0.last_mut() {
+                        modified_names.push(name);
+                        match new_slide.0.last() {
                             Some(Cmd(obj, _)) => {
                                 objects_in_view.insert(name, (obj, vbx));
                             }
@@ -579,33 +585,42 @@ pub fn file_to_slideshow<
                         }
                     }
                 }
-                objects_in_view.retain(|k, _| modified_names.contains(&k));
+                objects_in_view.retain(|k, _| modified_names.contains(k));
                 slides.push(new_slide);
             },
             Token::Viewbox(((((name, split), split_index), direction), constraints), span) => {
+                let vbx_margin = unsafe { registers.get("VIEWBOX_MARGIN").unwrap_unchecked() };
                 let rects = Layout::default()
-                    .margin(50.0)
+                    .margin(if let Ok(num) = vbx_margin.parse() {
+                        num
+                    } else {
+                        errors.push(Simple::custom(
+                            span.clone(),
+                            format!("\"{}\" is not a valid floating point number", vbx_margin),
+                        ));
+                        continue;
+                    })
                     .direction(direction)
-                    .constraints(constraints.as_ref())
-                    .split(if let Some(rect) = layouts.get(&split) {
-                        rect[split_index]
+                    .constraints(constraints)
+                    .split(if let Some(rect) = layouts.get(split.as_str()) {
+                        rect[*split_index]
                     } else if split == "Size" {
                         size
                     } else {
                         errors.push(Simple::custom(
-                            span,
+                            span.clone(),
                             format!("Could not find viewbox {split}"),
                         ));
                         continue;
                     });
-                layouts.insert(name, rects.into_iter().collect());
+                layouts.insert(name, rects);
             }
             Token::Obj(((name, type_), values), span) => {
-                let mut values_map = values.into_iter().collect::<AHashMap<String, String>>();
-                let obj = match K::construct(name.clone(), type_, &mut values_map, &registers) {
+                let vals_mut = values as *const _ as *mut AHashMap<String, String>;
+                let obj = match K::construct(name, type_, unsafe { &mut *vals_mut }, &registers) {
                     Ok(o) => o,
                     Err(e) => {
-                        errors.push(Simple::custom(span, e));
+                        errors.push(Simple::custom(span.clone(), e));
                         continue;
                     }
                 };
@@ -613,7 +628,7 @@ pub fn file_to_slideshow<
                     name,
                     SlideObject {
                         obj_type: obj,
-                        position: Vec4::zero(),
+                        position: DVec4::ZERO,
                         opacity: 0.0,
                     },
                 );
@@ -834,6 +849,10 @@ mod tests {
 );"#
                     .as_ref(),
                     )];
+        let mut hashmap_eq = AHashMap::default();
+        hashmap_eq.insert(String::from("value"), String::from("Neat"));
+        hashmap_eq.insert(String::from("alignment"), String::from("left"));
+        hashmap_eq.insert(String::from("font"), String::from("Fira Code"));
         for i in objs_paragraph {
             if let Some(ref objs) = i.0 {
                 assert!(objs.len() == 1);
@@ -844,11 +863,7 @@ mod tests {
                     },
                     &(
                         (String::from("SubtitleParagraph"), String::from("Paragraph")),
-                        vec![
-                            (String::from("value"), String::from("Neat")),
-                            (String::from("alignment"), String::from("left")),
-                            (String::from("font"), String::from("Fira Code"))
-                        ]
+                        hashmap_eq.clone()
                     )
                 );
             }

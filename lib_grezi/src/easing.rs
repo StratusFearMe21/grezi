@@ -13,10 +13,10 @@ macro_rules! easer {
         /// Easing function for $f returning and iterator
         pub fn $f(start: $ty, end: $ty, steps: f64) -> $t {
             $t {
-                start: start,
+                start,
                 dist: end - start,
                 step: 0.0,
-                steps: steps,
+                steps,
             }
         }
 
@@ -49,25 +49,18 @@ macro_rules! easer {
     };
 }
 
-easer!(
-    vek::Vec4<f64>,
-    cubic_rect_inout,
-    CubicPointInOut,
-    |x: f64| {
-        if x < 0.5 {
-            4. * (x * x * x)
-        } else {
-            let y = x.mul_add(2., -2.);
-            (y * y * y).mul_add(0.5, 1.0)
-        }
+easer!(glam::DVec4, cubic_rect_inout, CubicPointInOut, |x: f64| {
+    if x < 0.5 {
+        4. * x.powi(3)
+    } else {
+        x.mul_add(2., -2.).powi(3).mul_add(0.5, 1.0)
     }
-);
+});
 
 easer!(f64, cubic_single_inout, CubicSingleInOut, |x: f64| {
     if x < 0.5 {
-        4. * (x * x * x)
+        4. * x.powi(3)
     } else {
-        let y = x.mul_add(2., -2.);
-        (y * y * y).mul_add(0.5, 1.0)
+        x.mul_add(2., -2.).powi(3).mul_add(0.5, 1.0)
     }
 });

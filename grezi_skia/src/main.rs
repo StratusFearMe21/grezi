@@ -5,6 +5,7 @@ use std::{
 
 use anyhow::{bail, Context};
 use ariadne::Label;
+use glam::DVec4;
 use grezi::{layout::Rect, AHashMap, Slide};
 use skulpin::{
     rafx::api::RafxExtents2D,
@@ -19,7 +20,6 @@ use skulpin::{
     },
 };
 use structopt::StructOpt;
-use vek::Vec4;
 static mut FONT_CACHE: MaybeUninit<FontCollection> = MaybeUninit::uninit();
 
 #[derive(StructOpt)]
@@ -54,18 +54,22 @@ pub enum ObjectType {
     },
     /// Draw a circle to the screen
     Point,
+    Image(
+        /// The image itself
+        skulpin::skia_safe::Image,
+    ),
 }
 
 impl grezi::Object for ObjectType {
     type Error = anyhow::Error;
 
     fn construct(
-        _: String,
-        type_: String,
+        _: &str,
+        type_: &str,
         values: &mut AHashMap<String, String>,
-        registers: &AHashMap<String, String>,
+        registers: &AHashMap<&str, &str>,
     ) -> anyhow::Result<Self> {
-        match type_.as_str() {
+        match type_ {
             "Paragraph" | "paragraph" | "PP" | "pp" | "P" | "p" => {
                 let value = match values.remove("value") {
                     Some(val) => val,
@@ -73,9 +77,9 @@ impl grezi::Object for ObjectType {
                         bail!("A value is required for your text");
                     }
                 };
-                let font_family = values
-                    .remove("font_family")
-                    .unwrap_or(unsafe { registers.get("FONT_FAMILY").unwrap_unchecked().clone() });
+                let font_family = values.remove("font_family").unwrap_or_else(|| unsafe {
+                    registers.get("FONT_FAMILY").unwrap_unchecked().to_string()
+                });
                 let alignment = match match values.remove("alignment") {
                     Some(a) => Some(a),
                     None => values.remove("align"),
@@ -87,13 +91,7 @@ impl grezi::Object for ObjectType {
                     _ => TextAlign::Center,
                 };
                 let font_size = values.remove("font_size").map_or_else(
-                    || unsafe {
-                        registers
-                            .get("FONT_SIZE")
-                            .unwrap_unchecked()
-                            .clone()
-                            .parse::<f32>()
-                    },
+                    || unsafe { registers.get("FONT_SIZE").unwrap_unchecked().parse::<f32>() },
                     |k| k.parse(),
                 )?;
                 Ok(ObjectType::Text {
@@ -111,11 +109,11 @@ impl grezi::Object for ObjectType {
                         bail!("A value is required for your text")
                     }
                 };
-                let font_family = values.remove("font_family").unwrap_or(unsafe {
+                let font_family = values.remove("font_family").unwrap_or_else(|| unsafe {
                     registers
                         .get("HEADER_FONT_FAMILY")
                         .unwrap_unchecked()
-                        .clone()
+                        .to_string()
                 });
                 let alignment = match match values.remove("alignment") {
                     Some(a) => Some(a),
@@ -133,12 +131,10 @@ impl grezi::Object for ObjectType {
                             registers
                                 .get("HEADER_FONT_SIZE_ADD")
                                 .unwrap_unchecked()
-                                .clone()
                                 .parse::<f32>()?
                                 + registers
                                     .get("FONT_SIZE")
                                     .unwrap_unchecked()
-                                    .clone()
                                     .parse::<f32>()?
                         })
                     },
@@ -161,6 +157,18 @@ impl grezi::Object for ObjectType {
             })
             }
             */
+            "Image" | "image" | "img" | "IMG" | "pic" | "Pic" | "Picture" | "picture" => {
+                let image = unsafe {
+                    memmap::Mmap::map(&std::fs::File::open(
+                        values.remove("path").context("Images require a path")?,
+                    )?)?
+                };
+                let image = skulpin::skia_safe::image::Image::from_encoded(
+                    skulpin::skia_safe::Data::new_copy(&image),
+                )
+                .context("Invalid image passed")?;
+                Ok(ObjectType::Image(image))
+            }
             e => {
                 bail!("Object cannot have type {}", e)
             }
@@ -168,6 +176,8 @@ impl grezi::Object for ObjectType {
     }
 
     fn bounds(&mut self, w: f64, h: f64) -> anyhow::Result<(f64, f64)> {
+        let w = w as f32;
+        let h = h as f32;
         match self {
             ObjectType::Text {
                 value,
@@ -196,13 +206,23 @@ impl grezi::Object for ObjectType {
                     .max_by(|f, g| f.partial_cmp(g).unwrap())
                     .unwrap()
                     + 10.0;
-                *max_width = if width > w as f32 { w as f32 } else { width };
+                *max_width = if width > w { w } else { width };
                 built.layout(*max_width);
-                if built.height() > h as f32 {
+                if built.height() > h {
                     bail!("This text overflows the slide. text should be less than {h} pixels high")
                 } else {
                     Ok((built.max_width() as f64, built.height() as f64))
                 }
+            }
+            ObjectType::Image(image) => {
+                let width = image.width() as f32;
+                let height = image.height() as f32;
+                let nw = if width > w { w } else { width };
+                let nh = if height > h { h } else { height };
+                let ds = nw.min(nh);
+                let ss = width.max(height);
+
+                Ok(((ds * width / ss) as f64, (ds * height / ss) as f64))
             }
             ObjectType::Point => unimplemented!(),
         }
@@ -210,6 +230,7 @@ impl grezi::Object for ObjectType {
 }
 
 fn main() -> anyhow::Result<()> {
+    rayon::ThreadPoolBuilder::new().build_global()?;
     let opts = Opts::from_args();
     let map = unsafe { memmap::Mmap::map(&std::fs::File::open(opts.file)?)? };
     let logical_size = skulpin::winit::dpi::LogicalSize::new(1920.0, 1080.0);
@@ -272,7 +293,7 @@ fn main() -> anyhow::Result<()> {
                     break;
                 }
             }
-            dbg!(j.0.position);
+            // dbg!(j.0.position);
         }
     }
     let mut skia = skulpin::RendererBuilder::new()
@@ -358,7 +379,7 @@ fn main() -> anyhow::Result<()> {
             Event::RedrawRequested(_) => {
                 skia.draw(extents, s_factor, |canvas, _coordinate_system_helper| {
                     canvas.clear(Color4f::new(0.39, 0.39, 0.39, 1.0));
-                    draw(&slideshow[index], canvas, &font_mgr);
+                    draw(&slideshow[index], canvas, font_mgr);
                 })
                 .unwrap();
             }
@@ -370,7 +391,7 @@ fn main() -> anyhow::Result<()> {
                 drawing = slideshow[index].step();
                 skia.draw(extents, s_factor, |canvas, _coordinate_system_helper| {
                     canvas.clear(Color4f::new(0.39, 0.39, 0.39, 1.0));
-                    draw(&slideshow[index], canvas, &font_mgr);
+                    draw(&slideshow[index], canvas, font_mgr);
                 })
                 .unwrap();
                 previous_frame_start = frame_start;
@@ -380,7 +401,7 @@ fn main() -> anyhow::Result<()> {
     });
 }
 
-pub fn draw<I: Iterator<Item = Vec4<f64>>, O: Iterator<Item = f64>>(
+pub fn draw<I: Iterator<Item = DVec4>, O: Iterator<Item = f64>>(
     slide: &Slide<ObjectType, I, O>,
     canvas: &mut skulpin::skia_safe::Canvas,
     collection: &FontCollection,
@@ -421,17 +442,31 @@ pub fn draw<I: Iterator<Item = Vec4<f64>>, O: Iterator<Item = f64>>(
                 let mut built = paragraph.build();
                 built.layout(max_width);
                 built.paint(canvas, (cmd.0.position.x as f32, cmd.0.position.y as f32));
-                #[cfg(debug_assertions)]
-                {
-                    let paint = skulpin::skia_safe::Paint::new(
-                        skulpin::skia_safe::Color4f::new(1.0, 1.0, 0.5, 0.5),
-                        None,
-                    );
-                    canvas.draw_rect(workrect, &paint);
-                    canvas.draw_circle((workrect.left, workrect.top), 20.0, &paint);
-                }
+            }
+            ObjectType::Image(ref img) => {
+                let paint = skulpin::skia_safe::Paint::new(Color4f::new(1.0, 1.0, 1.0, 1.0), None);
+                canvas.draw_image_rect(
+                    img,
+                    None,
+                    skulpin::skia_safe::Rect::new(
+                        cmd.0.position.x as f32,
+                        cmd.0.position.y as f32,
+                        cmd.0.position.z as f32,
+                        cmd.0.position.w as f32,
+                    ),
+                    &paint,
+                );
             }
             _ => unimplemented!(),
+        }
+        #[cfg(debug_assertions)]
+        {
+            let paint = skulpin::skia_safe::Paint::new(
+                skulpin::skia_safe::Color4f::new(1.0, 1.0, 0.5, 0.5),
+                None,
+            );
+            canvas.draw_rect(workrect, &paint);
+            canvas.draw_circle((workrect.left, workrect.top), 20.0, &paint);
         }
     }
     #[cfg(debug_assertions)]

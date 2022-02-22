@@ -30,7 +30,7 @@ impl InputType {
 }
 
 fn main() -> Result<(), std::io::Error> {
-    let args = clap::App::new("GRZFmt").arg(Arg::new("INPUT").required(true));
+    let args = clap::Command::new("GRZFmt").arg(Arg::new("INPUT").required(true));
     let mut map = unsafe {
         match args.get_matches().value_of("INPUT").unwrap_unchecked() {
             "-" => InputType::Stdin(Vec::new()),
@@ -95,7 +95,19 @@ fn main() -> Result<(), std::io::Error> {
                     writer.write_all(b"];")?;
                 }
                 Token::Register((name, val)) => {
-                    writer.write_fmt(format_args!("{}: {};", name.to_ascii_uppercase(), val))?;
+                    if val.split_whitespace().next().is_some() {
+                        writer.write_fmt(format_args!(
+                            "{}: \"{}\";",
+                            name.to_ascii_uppercase(),
+                            val
+                        ))?;
+                    } else {
+                        writer.write_fmt(format_args!(
+                            "{}: {};",
+                            name.to_ascii_uppercase(),
+                            val
+                        ))?;
+                    }
                 }
             }
             writer.write_all(b"\n\n")?;
