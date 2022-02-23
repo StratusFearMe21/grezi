@@ -37,6 +37,7 @@ pub enum Constraint {
 }
 
 impl Display for Constraint {
+    #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
             Constraint::Max(n) => write!(f, "{}+", n),

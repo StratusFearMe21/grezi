@@ -1,11 +1,7 @@
-use std::{
-    mem::MaybeUninit,
-    time::{Duration, Instant},
-};
+use std::{mem::MaybeUninit, time::Instant};
 
 use anyhow::{bail, Context};
 use ariadne::Label;
-use glam::DVec4;
 use grezi::{layout::Rect, AHashMap, Slide};
 use skulpin::{
     rafx::api::RafxExtents2D,
@@ -24,9 +20,6 @@ static mut FONT_CACHE: MaybeUninit<FontCollection> = MaybeUninit::uninit();
 
 #[derive(StructOpt)]
 struct Opts {
-    #[structopt(short = "r", long, default_value = "60")]
-    /// The fps to render the slideshow at
-    fps: f64,
     #[structopt(short, long, default_value = "0.5")]
     /// The delay between slides in seconds
     delay: f64,
@@ -250,14 +243,7 @@ fn main() -> anyhow::Result<()> {
     };
     let font_mgr = unsafe { FONT_CACHE.write(FontCollection::new()) };
     font_mgr.set_default_font_manager(FontMgr::default(), None);
-    let mut slideshow = match grezi::file_to_slideshow(
-        &map,
-        size,
-        grezi::easing::cubic_rect_inout,
-        grezi::easing::cubic_single_inout,
-        255.0,
-        opts.fps * opts.delay,
-    ) {
+    let mut slideshow = match grezi::file_to_slideshow(&map, size, 255.0) {
         Ok(slides) => slides,
         Err(errors) => {
             let mut report = ariadne::Report::build(ariadne::ReportKind::Error, (), 0);
@@ -287,14 +273,8 @@ fn main() -> anyhow::Result<()> {
     let mut s_factor = winit_window.scale_factor();
     #[cfg(debug_assertions)]
     for i in slideshow.iter_mut() {
-        for j in i.0.iter_mut() {
-            loop {
-                if !j.step() {
-                    break;
-                }
-            }
-            // dbg!(j.0.position);
-        }
+        i.1 = 1.0;
+        i.step();
     }
     let mut skia = skulpin::RendererBuilder::new()
         .coordinate_system(skulpin::CoordinateSystem::VisibleRange(
@@ -306,7 +286,6 @@ fn main() -> anyhow::Result<()> {
     let mut index = 0;
     let mut drawing = true;
     let mut previous_frame_start = Instant::now();
-    let frame_duration = Duration::from_secs_f64(1.0 / opts.fps);
     event_loop.run(move |e, _window_target, control_flow| {
         let frame_start = Instant::now();
         *control_flow = ControlFlow::Wait;
@@ -363,6 +342,7 @@ fn main() -> anyhow::Result<()> {
                     if index != slideshow.len() - 1 {
                         index += 1;
                         drawing = true;
+                        previous_frame_start = frame_start;
                     } else {
                         *control_flow = ControlFlow::Exit;
                         return;
@@ -372,6 +352,7 @@ fn main() -> anyhow::Result<()> {
                     if index != 0 {
                         index -= 1;
                         drawing = true;
+                        previous_frame_start = frame_start;
                     }
                 }
                 _ => {}
@@ -387,34 +368,37 @@ fn main() -> anyhow::Result<()> {
         }
 
         if drawing {
-            if frame_start - previous_frame_start > frame_duration {
-                drawing = slideshow[index].step();
-                skia.draw(extents, s_factor, |canvas, _coordinate_system_helper| {
-                    canvas.clear(Color4f::new(0.39, 0.39, 0.39, 1.0));
-                    draw(&slideshow[index], canvas, font_mgr);
-                })
-                .unwrap();
-                previous_frame_start = frame_start;
+            slideshow[index].1 += (frame_start - previous_frame_start).as_secs_f64() / opts.delay;
+            if slideshow[index].1 >= 1.0 {
+                slideshow[index].1 = 1.0;
+                drawing = false;
             }
-            *control_flow = ControlFlow::WaitUntil(previous_frame_start + frame_duration);
+            slideshow[index].step();
+            skia.draw(extents, s_factor, |canvas, _coordinate_system_helper| {
+                canvas.clear(Color4f::new(0.39, 0.39, 0.39, 1.0));
+                draw(&slideshow[index], canvas, font_mgr);
+            })
+            .unwrap();
+            previous_frame_start = frame_start;
+            *control_flow = ControlFlow::Poll;
         }
     });
 }
 
-pub fn draw<I: Iterator<Item = DVec4>, O: Iterator<Item = f64>>(
-    slide: &Slide<ObjectType, I, O>,
+pub fn draw(
+    slide: &Slide<ObjectType>,
     canvas: &mut skulpin::skia_safe::Canvas,
     collection: &FontCollection,
 ) {
     for cmd in slide.0.iter() {
         #[cfg(debug_assertions)]
         let workrect = skulpin::skia_safe::Rect::new(
-            cmd.0.position.x as f32,
-            cmd.0.position.y as f32,
-            cmd.0.position.z as f32,
-            cmd.0.position.w as f32,
+            cmd.obj.parameters.position.x as f32,
+            cmd.obj.parameters.position.y as f32,
+            cmd.obj.parameters.position.z as f32,
+            cmd.obj.parameters.position.w as f32,
         );
-        match cmd.0.obj_type {
+        match cmd.obj.obj_type {
             ObjectType::Text {
                 ref value,
                 font_size,
@@ -429,7 +413,7 @@ pub fn draw<I: Iterator<Item = DVec4>, O: Iterator<Item = f64>>(
                     .set_font_families(&[font_family])
                     .set_typeface(typeface)
                     .set_color(skulpin::skia_safe::Color::from_argb(
-                        cmd.0.opacity as u8,
+                        cmd.obj.parameters.opacity as u8,
                         255,
                         255,
                         255,
@@ -441,7 +425,13 @@ pub fn draw<I: Iterator<Item = DVec4>, O: Iterator<Item = f64>>(
                 paragraph.add_text(value);
                 let mut built = paragraph.build();
                 built.layout(max_width);
-                built.paint(canvas, (cmd.0.position.x as f32, cmd.0.position.y as f32));
+                built.paint(
+                    canvas,
+                    (
+                        cmd.obj.parameters.position.x as f32,
+                        cmd.obj.parameters.position.y as f32,
+                    ),
+                );
             }
             ObjectType::Image(ref img) => {
                 let paint = skulpin::skia_safe::Paint::new(Color4f::new(1.0, 1.0, 1.0, 1.0), None);
@@ -449,10 +439,10 @@ pub fn draw<I: Iterator<Item = DVec4>, O: Iterator<Item = f64>>(
                     img,
                     None,
                     skulpin::skia_safe::Rect::new(
-                        cmd.0.position.x as f32,
-                        cmd.0.position.y as f32,
-                        cmd.0.position.z as f32,
-                        cmd.0.position.w as f32,
+                        cmd.obj.parameters.position.x as f32,
+                        cmd.obj.parameters.position.y as f32,
+                        cmd.obj.parameters.position.z as f32,
+                        cmd.obj.parameters.position.w as f32,
                     ),
                     &paint,
                 );

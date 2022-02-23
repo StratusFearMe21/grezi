@@ -57,9 +57,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.54"
+version = "1.0.55"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a99269dff3bc004caa411f38845c20303f1e393ca2bd6581576fa3a7f59577d"
+checksum = "159bb86af3a200e19a068f4224eae4c8bb2d0fa054c7e5d1cacd5cef95e684cd"
 
 [[package]]
 name = "ariadne"
@@ -645,6 +645,9 @@ name = "glam"
 version = "0.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e4fa84eead97d5412b2a20aed4d66612a97a9e41e08eababdb9ae2bf88667490"
+dependencies = [
+ "mint",
+]
 
 [[package]]
 name = "glob"
@@ -672,6 +675,8 @@ dependencies = [
  "cassowary",
  "chumsky",
  "glam 0.20.2",
+ "keyframe",
+ "keyframe_derive",
  "rayon",
 ]
 
@@ -792,6 +797,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a38fc24e30fd564ce974c02bf1d337caddff65be6cc4735a1f7eab22a7440f04"
 dependencies = [
  "wasm-bindgen",
+]
+
+[[package]]
+name = "keyframe"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a3c02b74c96768920b2c0d7fc723963dcbc2fc165c9db9eb64889635496c4a0b"
+dependencies = [
+ "mint",
+ "num-traits",
+]
+
+[[package]]
+name = "keyframe_derive"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "377d191d4db9904c659a7336fc943feb17bc737e18e8d7dbf4c3cfc86698f610"
+dependencies = [
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -920,6 +945,12 @@ dependencies = [
  "adler",
  "autocfg",
 ]
+
+[[package]]
+name = "mint"
+version = "0.5.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e53debba6bda7a793e5f99b8dacf19e626084f525f7829104ba9898f367d85ff"
 
 [[package]]
 name = "mio"

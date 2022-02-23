@@ -71,16 +71,14 @@
 /// Access to the raw constraint solver and associated types modified from the `tui` crate.
 pub mod layout;
 
-/// Various easing mechanisms for moving objects, controlling opacities, and transitioning slides
-pub mod easing;
-
-use std::{iter::Zip, ops::Range};
+use std::ops::Range;
 
 use ahash::RandomState;
 /// A type alias for a [`std::collections::HashMap`] which uses [`ahash`] as it's hasher.
 pub type AHashMap<K, V> = std::collections::HashMap<K, V, RandomState>;
 use chumsky::prelude::*;
 use glam::DVec4;
+use keyframe::EasingFunction;
 use layout::{Constraint, Layout, Rect};
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 
@@ -129,7 +127,7 @@ type SlideType = Vec<(
     ),
 )>;
 
-type Slideshow<K, U, C> = Result<Vec<Slide<K, U, C>>, Vec<Simple<u8>>>;
+type Slideshow<K> = Result<Vec<Slide<K>>, Vec<Simple<u8>>>;
 
 //--> Enums
 
@@ -174,6 +172,7 @@ pub enum LineUpGeneral {
 }
 
 impl std::fmt::Display for LineUpGeneral {
+    #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
             LineUpGeneral::Top => write!(f, "^"),
@@ -239,63 +238,63 @@ pub trait Object: std::fmt::Debug + Sized {
 
 //--> Structs
 
-/// A parsed and complete object
-#[derive(Debug, Clone)]
-pub struct SlideObject<T: Object + Clone> {
-    /// The type of the object
-    pub obj_type: T,
+/// The parameters of the object
+#[derive(Debug, Clone, Copy)]
+pub struct Parameters {
     /// The current position of the object
     pub position: DVec4,
     /// The current opacity of the object
     pub opacity: f64,
 }
 
-/// A slide
-pub struct Slide<T: Object + Clone, I: Iterator<Item = DVec4>, O: Iterator<Item = f64>>(
-    pub Vec<Cmd<T, I, O>>,
-);
+/// A parsed and complete object
+#[derive(Debug, Clone)]
+pub struct SlideObject<T: Object + Clone> {
+    /// The type of the object
+    pub obj_type: T,
+    /// The parameters of the object
+    pub parameters: Parameters,
+}
 
-impl<T: Object + Clone, I: Iterator<Item = DVec4>, O: Iterator<Item = f64>> Slide<T, I, O> {
+/// A slide
+pub struct Slide<T: Object + Clone>(pub Vec<Cmd<T>>, pub f64);
+
+impl<T: Object + Clone> Slide<T> {
     /// Steps the entire slide forward, returning if anything changed.
-    pub fn step(&mut self) -> bool {
-        self.0.par_iter_mut().all(|f| f.step());
-        true
+    #[inline]
+    pub fn step(&mut self) {
+        self.0.par_iter_mut().for_each(|f| f.step(self.1));
     }
 }
 
 /// Commands are used to draw and move objects on the screen
-pub struct Cmd<T: Object + Clone, I: Iterator<Item = DVec4>, O: Iterator<Item = f64>>(
+pub struct Cmd<T: Object + Clone> {
     /// The object to add
-    pub SlideObject<T>,
-    /// Easing for (x, y, opacity)
-    pub Zip<I, O>,
-);
-
-unsafe impl<T: Object + Clone, I: Iterator<Item = DVec4>, O: Iterator<Item = f64>> Send
-    for Cmd<T, I, O>
-{
+    pub obj: SlideObject<T>,
+    /// The original state of the object before the command
+    pub iter_from: Parameters,
+    /// The end state of the object
+    pub iter_to: Parameters,
 }
 
-unsafe impl<T: Object + Clone, I: Iterator<Item = DVec4>, O: Iterator<Item = f64>> Sync
-    for Cmd<T, I, O>
-{
-}
+unsafe impl<T: Object + Clone> Send for Cmd<T> {}
 
-impl<T: Object + Clone, I: Iterator<Item = DVec4>, O: Iterator<Item = f64>> Cmd<T, I, O> {
+unsafe impl<T: Object + Clone> Sync for Cmd<T> {}
+
+impl<T: Object + Clone> Cmd<T> {
     /// Step the given command forward
-    pub fn step(&mut self) -> bool {
-        if let Some(e) = self.1.next() {
-            self.0.position = e.0;
-            self.0.opacity = e.1;
-            true
-        } else {
-            false
-        }
+    #[inline]
+    pub fn step(&mut self, step: f64) {
+        let ease = keyframe::functions::EaseInOutCubic.y(step);
+        self.obj.parameters.position = self.iter_from.position.lerp(self.iter_to.position, ease);
+        self.obj.parameters.opacity =
+            self.iter_from.opacity + (self.iter_to.opacity - self.iter_from.opacity) * ease;
     }
 }
 
 //--> Private Functions
 
+#[inline]
 fn fold_lineup(line_up: &(LineUpGeneral, LineUpGeneral)) -> LineUp {
     match line_up.0 {
         LineUpGeneral::Center => match line_up.1 {
@@ -460,18 +459,15 @@ pub fn tokenizer(data: &[u8]) -> (Option<Vec<Token>>, Vec<Simple<u8>>) {
 
 /// Converts a `.grz` file into a full slide show made up of commands. Commands contain the object
 /// to be drawn as well as the iterator deciding where objects actually go to.
-pub fn file_to_slideshow<U: Iterator<Item = DVec4>, C: Iterator<Item = f64>, K: Object + Clone>(
+pub fn file_to_slideshow<K: Object + Clone>(
     file: &[u8],
     size: Rect,
-    easing_fn: impl Fn(DVec4, DVec4, f64) -> U,
-    opacity_fn: impl Fn(f64, f64, f64) -> C,
     opacity_steps: f64,
-    delay: f64,
-) -> Slideshow<K, U, C> {
+) -> Slideshow<K> {
     let mut layouts: AHashMap<&str, Vec<Rect>> = AHashMap::default();
     let mut unused_objects: AHashMap<&str, SlideObject<K>> = AHashMap::default();
     let mut objects_in_view: AHashMap<&str, (*const SlideObject<K>, Rect)> = AHashMap::default();
-    let mut slides: Vec<Slide<K, U, C>> = Vec::new();
+    let mut slides: Vec<Slide<K>> = Vec::new();
     let mut registers: AHashMap<&str, &str> = AHashMap::default();
     registers.insert("FONT_SIZE", "48");
     registers.insert("HEADER_FONT_SIZE_ADD", "24");
@@ -491,7 +487,7 @@ pub fn file_to_slideshow<U: Iterator<Item = DVec4>, C: Iterator<Item = f64>, K: 
     for i in tokens.iter() {
         match i {
             Token::Slide(cmds, span) => unsafe {
-                let mut new_slide = Slide(Vec::with_capacity(cmds.len()));
+                let mut new_slide = Slide(Vec::with_capacity(cmds.len()), 0.0);
                 let mut modified_names: Vec<&str> = Vec::with_capacity(cmds.len());
                 for (((name, split), split_index), (from, goto)) in cmds.iter() {
                     let vbx = if let Some(rect) = layouts.get(split.as_str()) {
@@ -507,8 +503,8 @@ pub fn file_to_slideshow<U: Iterator<Item = DVec4>, C: Iterator<Item = f64>, K: 
                     };
                     if let Some(obj) = objects_in_view.get_mut(name.as_str()) {
                         let obj_slide = (*(obj.0)).clone();
-                        let w = obj_slide.position.z - obj_slide.position.x;
-                        let h = obj_slide.position.w - obj_slide.position.y;
+                        let w = obj_slide.parameters.position.z - obj_slide.parameters.position.x;
+                        let h = obj_slide.parameters.position.w - obj_slide.parameters.position.y;
                         let pos_rect_from_xy = get_pos!(fold_lineup(from), obj.1, (w, h));
                         let pos_rect_goto_xy = get_pos!(fold_lineup(goto), vbx, (w, h));
                         let pos_rect_from = DVec4::new(
@@ -524,14 +520,17 @@ pub fn file_to_slideshow<U: Iterator<Item = DVec4>, C: Iterator<Item = f64>, K: 
                             pos_rect_goto_xy.1 + h,
                         );
                         obj.1 = vbx;
-                        new_slide.0.push(Cmd(
-                            obj_slide,
-                            easing_fn(pos_rect_from, pos_rect_goto, delay).zip(opacity_fn(
-                                opacity_steps,
-                                opacity_steps,
-                                delay,
-                            )),
-                        ));
+                        new_slide.0.push(Cmd {
+                            obj: obj_slide,
+                            iter_from: Parameters {
+                                position: pos_rect_from.into(),
+                                opacity: opacity_steps,
+                            },
+                            iter_to: Parameters {
+                                position: pos_rect_goto.into(),
+                                opacity: opacity_steps,
+                            },
+                        });
                         modified_names.push(name);
                     } else {
                         let obj = match unused_objects.get(name.as_str()) {
@@ -552,8 +551,8 @@ pub fn file_to_slideshow<U: Iterator<Item = DVec4>, C: Iterator<Item = f64>, K: 
                                 continue;
                             }
                         };
-                        obj_slide.position.z = bounds.0;
-                        obj_slide.position.w = bounds.1;
+                        obj_slide.parameters.position.z = bounds.0;
+                        obj_slide.parameters.position.w = bounds.1;
                         let pos_rect_from_xy = get_pos!(fold_lineup(from), vbx, bounds);
                         let pos_rect_goto_xy = get_pos!(fold_lineup(goto), vbx, bounds);
                         let pos_rect_from = DVec4::new(
@@ -568,17 +567,20 @@ pub fn file_to_slideshow<U: Iterator<Item = DVec4>, C: Iterator<Item = f64>, K: 
                             pos_rect_goto_xy.0 + bounds.0,
                             pos_rect_goto_xy.1 + bounds.1,
                         );
-                        new_slide.0.push(Cmd(
-                            obj_slide,
-                            easing_fn(pos_rect_from, pos_rect_goto, delay).zip(opacity_fn(
-                                0.0,
-                                opacity_steps,
-                                delay,
-                            )),
-                        ));
+                        new_slide.0.push(Cmd {
+                            obj: obj_slide,
+                            iter_from: Parameters {
+                                position: pos_rect_from.into(),
+                                opacity: 0.0,
+                            },
+                            iter_to: Parameters {
+                                position: pos_rect_goto.into(),
+                                opacity: opacity_steps,
+                            },
+                        });
                         modified_names.push(name);
                         match new_slide.0.last() {
-                            Some(Cmd(obj, _)) => {
+                            Some(Cmd { obj, .. }) => {
                                 objects_in_view.insert(name, (obj, vbx));
                             }
                             _ => core::hint::unreachable_unchecked(),
@@ -628,8 +630,10 @@ pub fn file_to_slideshow<U: Iterator<Item = DVec4>, C: Iterator<Item = f64>, K: 
                     name,
                     SlideObject {
                         obj_type: obj,
-                        position: DVec4::ZERO,
-                        opacity: 0.0,
+                        parameters: Parameters {
+                            position: DVec4::ZERO,
+                            opacity: 0.0,
+                        },
                     },
                 );
             }
