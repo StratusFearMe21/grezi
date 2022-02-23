@@ -28,7 +28,7 @@
 //! impl grezi::Object for CustomObject {
 //!     type Error = std::convert::Infallible;
 //!
-//!     fn bounds(&mut self, w: f64, h: f64) -> Result<(f64, f64), Self::Error> {
+//!     fn bounds(&mut self, w: f32, h: f32) -> Result<(f32, f32), Self::Error> {
 //!         Ok((50.0, 50.0))
 //!     }
 //!     fn construct(
@@ -77,8 +77,7 @@ use ahash::RandomState;
 /// A type alias for a [`std::collections::HashMap`] which uses [`ahash`] as it's hasher.
 pub type AHashMap<K, V> = std::collections::HashMap<K, V, RandomState>;
 use chumsky::prelude::*;
-use glam::DVec4;
-use keyframe::EasingFunction;
+use glam::Vec4;
 use layout::{Constraint, Layout, Rect};
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 
@@ -225,7 +224,7 @@ pub trait Object: std::fmt::Debug + Sized {
     type Error: std::fmt::Display;
 
     /// Returns the width and height of the object
-    fn bounds(&mut self, w: f64, h: f64) -> Result<(f64, f64), Self::Error>;
+    fn bounds(&mut self, w: f32, h: f32) -> Result<(f32, f32), Self::Error>;
 
     /// Constructs an object based on it's name, type, and associated keys/values.
     fn construct(
@@ -242,9 +241,9 @@ pub trait Object: std::fmt::Debug + Sized {
 #[derive(Debug, Clone, Copy)]
 pub struct Parameters {
     /// The current position of the object
-    pub position: DVec4,
+    pub position: Vec4,
     /// The current opacity of the object
-    pub opacity: f64,
+    pub opacity: f32,
 }
 
 /// A parsed and complete object
@@ -257,7 +256,7 @@ pub struct SlideObject<T: Object + Clone> {
 }
 
 /// A slide
-pub struct Slide<T: Object + Clone>(pub Vec<Cmd<T>>, pub f64);
+pub struct Slide<T: Object + Clone>(pub Vec<Cmd<T>>, pub f32);
 
 impl<T: Object + Clone> Slide<T> {
     /// Steps the entire slide forward, returning if anything changed.
@@ -284,8 +283,12 @@ unsafe impl<T: Object + Clone> Sync for Cmd<T> {}
 impl<T: Object + Clone> Cmd<T> {
     /// Step the given command forward
     #[inline]
-    pub fn step(&mut self, step: f64) {
-        let ease = keyframe::functions::EaseInOutCubic.y(step);
+    pub fn step(&mut self, step: f32) {
+        let ease = if step < 0.5 {
+            4.0 * step.powi(3)
+        } else {
+            (step - 1.0).mul_add((2.0 * step - 2.0).powi(2), 1.0)
+        };
         self.obj.parameters.position = self.iter_from.position.lerp(self.iter_to.position, ease);
         self.obj.parameters.opacity =
             self.iter_from.opacity + (self.iter_to.opacity - self.iter_from.opacity) * ease;
@@ -462,7 +465,7 @@ pub fn tokenizer(data: &[u8]) -> (Option<Vec<Token>>, Vec<Simple<u8>>) {
 pub fn file_to_slideshow<K: Object + Clone>(
     file: &[u8],
     size: Rect,
-    opacity_steps: f64,
+    opacity_steps: f32,
 ) -> Slideshow<K> {
     let mut layouts: AHashMap<&str, Vec<Rect>> = AHashMap::default();
     let mut unused_objects: AHashMap<&str, SlideObject<K>> = AHashMap::default();
@@ -507,13 +510,13 @@ pub fn file_to_slideshow<K: Object + Clone>(
                         let h = obj_slide.parameters.position.w - obj_slide.parameters.position.y;
                         let pos_rect_from_xy = get_pos!(fold_lineup(from), obj.1, (w, h));
                         let pos_rect_goto_xy = get_pos!(fold_lineup(goto), vbx, (w, h));
-                        let pos_rect_from = DVec4::new(
+                        let pos_rect_from = Vec4::new(
                             pos_rect_from_xy.0,
                             pos_rect_from_xy.1,
                             pos_rect_from_xy.0 + w,
                             pos_rect_from_xy.1 + h,
                         );
-                        let pos_rect_goto = DVec4::new(
+                        let pos_rect_goto = Vec4::new(
                             pos_rect_goto_xy.0,
                             pos_rect_goto_xy.1,
                             pos_rect_goto_xy.0 + w,
@@ -555,13 +558,13 @@ pub fn file_to_slideshow<K: Object + Clone>(
                         obj_slide.parameters.position.w = bounds.1;
                         let pos_rect_from_xy = get_pos!(fold_lineup(from), vbx, bounds);
                         let pos_rect_goto_xy = get_pos!(fold_lineup(goto), vbx, bounds);
-                        let pos_rect_from = DVec4::new(
+                        let pos_rect_from = Vec4::new(
                             pos_rect_from_xy.0,
                             pos_rect_from_xy.1,
                             pos_rect_from_xy.0 + bounds.0,
                             pos_rect_from_xy.1 + bounds.1,
                         );
-                        let pos_rect_goto = DVec4::new(
+                        let pos_rect_goto = Vec4::new(
                             pos_rect_goto_xy.0,
                             pos_rect_goto_xy.1,
                             pos_rect_goto_xy.0 + bounds.0,
@@ -631,7 +634,7 @@ pub fn file_to_slideshow<K: Object + Clone>(
                     SlideObject {
                         obj_type: obj,
                         parameters: Parameters {
-                            position: DVec4::ZERO,
+                            position: Vec4::ZERO,
                             opacity: 0.0,
                         },
                     },

@@ -25,15 +25,15 @@ pub enum Direction {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Constraint {
     /// Allocate this percentage of the box
-    Percentage(f64),
+    Percentage(f32),
     /// Allocate this portion of the box
-    Ratio(f64, f64),
+    Ratio(f32, f32),
     /// Allocate exactly this amount of the box
-    Length(f64),
+    Length(f32),
     /// Allocate at most this much of the box
-    Max(f64),
+    Max(f32),
     /// Allocate at least this much of the box
-    Min(f64),
+    Min(f32),
 }
 
 impl Display for Constraint {
@@ -52,7 +52,7 @@ impl Display for Constraint {
 impl Constraint {
     /// Apply a constraint directly on a given length
     #[inline]
-    pub fn apply(&self, length: f64) -> f64 {
+    pub fn apply(&self, length: f32) -> f32 {
         match *self {
             Constraint::Percentage(p) => length * p / 100.0,
             Constraint::Ratio(num, den) => num * length / den,
@@ -67,9 +67,9 @@ impl Constraint {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Margin {
     /// Pads the boxes on the top and bottom
-    pub vertical: f64,
+    pub vertical: f32,
     /// Pads the boxes on the left and right
-    pub horizontal: f64,
+    pub horizontal: f32,
 }
 
 /// A raw, unsolved viewbox. You must use the [`Layout.split()`] method to solve the viewbox.
@@ -111,7 +111,7 @@ impl<'a> Layout<'a> {
 
     /// Sets the vertical and horizontal margins for the unsolved viewbox
     #[inline]
-    pub fn margin(mut self, margin: f64) -> Layout<'a> {
+    pub fn margin(mut self, margin: f32) -> Layout<'a> {
         self.margin = Margin {
             horizontal: margin,
             vertical: margin,
@@ -121,14 +121,14 @@ impl<'a> Layout<'a> {
 
     /// Sets the horizontal margin of the unsolved viewbox
     #[inline]
-    pub fn horizontal_margin(mut self, horizontal: f64) -> Layout<'a> {
+    pub fn horizontal_margin(mut self, horizontal: f32) -> Layout<'a> {
         self.margin.horizontal = horizontal;
         self
     }
 
     /// Sets the vertical margin of the unsolved viewbox
     #[inline]
-    pub fn vertical_margin(mut self, vertical: f64) -> Layout<'a> {
+    pub fn vertical_margin(mut self, vertical: f32) -> Layout<'a> {
         self.margin.vertical = vertical;
         self
     }
@@ -288,7 +288,11 @@ impl<'a> Layout<'a> {
         solver.add_constraints(&ccs).unwrap();
         for &(var, value) in solver.fetch_changes() {
             let (index, attr) = vars[&var];
-            let value = if value.is_sign_negative() { 0.0 } else { value };
+            let value = if value.is_sign_negative() {
+                0.0
+            } else {
+                value as f32
+            };
             match attr {
                 0 => {
                     results[index].left = value;
@@ -358,20 +362,20 @@ impl Element {
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Rect {
     /// The x coordinate to the left of the [`Rect`]
-    pub left: f64,
+    pub left: f32,
     /// The y coordinate on top of the [`Rect`]
-    pub top: f64,
+    pub top: f32,
     /// The x coordinate to the right of the [`Rect`]
-    pub right: f64,
+    pub right: f32,
     /// The y coordinate on the bottom of the [`Rect`]
-    pub bottom: f64,
+    pub bottom: f32,
 }
 
 impl Rect {
     /// Creates a new rect, with width and height limited to keep the area under max u16.
     /// If clipped, aspect ratio will be preserved.
-    pub fn new(left: f64, top: f64, width: f64, height: f64) -> Rect {
-        let max_area = f64::MAX;
+    pub fn new(left: f32, top: f32, width: f32, height: f32) -> Rect {
+        let max_area = f32::MAX;
         let (clipped_width, clipped_height) = if width * height > max_area {
             let aspect_ratio = width / height;
             let max_area_f = max_area;
@@ -391,19 +395,19 @@ impl Rect {
 
     /// Calculates the total area of the [`Rect`] (width * height)
     #[inline]
-    pub fn area(self) -> f64 {
+    pub fn area(self) -> f32 {
         self.width() * self.height()
     }
 
     /// Calculates the width of the [`Rect`]
     #[inline]
-    pub fn width(self) -> f64 {
+    pub fn width(self) -> f32 {
         self.right - self.left
     }
 
     /// Calculates the height of the [`Rect`]
     #[inline]
-    pub fn height(self) -> f64 {
+    pub fn height(self) -> f32 {
         self.bottom - self.top
     }
 
@@ -426,10 +430,10 @@ impl Rect {
     #[inline]
     pub fn union(self, other: Rect) -> Rect {
         Rect {
-            left: f64::min(self.left, other.left),
-            top: f64::min(self.top, other.top),
-            right: f64::max(self.right, other.right),
-            bottom: f64::max(self.bottom, other.bottom),
+            left: f32::min(self.left, other.left),
+            top: f32::min(self.top, other.top),
+            right: f32::max(self.right, other.right),
+            bottom: f32::max(self.bottom, other.bottom),
         }
     }
 
@@ -437,10 +441,10 @@ impl Rect {
     #[inline]
     pub fn intersection(self, other: Rect) -> Rect {
         Rect {
-            left: f64::max(self.left, other.left),
-            top: f64::max(self.top, other.top),
-            right: f64::min(self.right, other.right),
-            bottom: f64::min(self.bottom, other.bottom),
+            left: f32::max(self.left, other.left),
+            top: f32::max(self.top, other.top),
+            right: f32::min(self.right, other.right),
+            bottom: f32::min(self.bottom, other.bottom),
         }
     }
 
@@ -480,7 +484,7 @@ mod tests {
 
         assert_eq!(
             target.height(),
-            chunks.iter().map(|r| r.height()).sum::<f64>()
+            chunks.iter().map(|r| r.height()).sum::<f32>()
         );
         chunks
             .windows(2)
@@ -491,35 +495,35 @@ mod tests {
     fn test_rect_size_truncation() {
         for width in 256..300 {
             for height in 256..30 {
-                let rect = Rect::new(0.0, 0.0, f64::from(width), f64::from(height));
+                let rect = Rect::new(0.0, 0.0, f32::from(width), f32::from(height));
                 rect.area(); // Should not panic.
-                assert!(rect.width() < f64::from(width) || rect.height() < f64::from(height));
+                assert!(rect.width() < f32::from(width) || rect.height() < f32::from(height));
                 // The target dimensions are rounded down so the math will not be too precise
                 // but let's make sure the ratios don't diverge crazily.
                 assert!(
-                    (rect.width() / rect.height() - f64::from(width) / f64::from(height)).abs()
+                    (rect.width() / rect.height() - f32::from(width) / f32::from(height)).abs()
                         < 1.0
                 )
             }
         }
 
         // One dimension below 255, one above. Area above max u16.
-        let width = f64::MAX;
-        let height = f64::MAX;
-        let rect = Rect::new(0.0, 0.0, f64::from(width), f64::from(height));
+        let width = f32::MAX;
+        let height = f32::MAX;
+        let rect = Rect::new(0.0, 0.0, f32::from(width), f32::from(height));
         assert_ne!(rect.width(), 900.0);
         assert_ne!(rect.height(), 100.0);
-        assert!(rect.width() < f64::from(width) || rect.height() < f64::from(height));
+        assert!(rect.width() < f32::from(width) || rect.height() < f32::from(height));
     }
 
     #[test]
     fn test_rect_size_preservation() {
         for width in 0..256 {
             for height in 0..256 {
-                let rect = Rect::new(0.0, 0.0, f64::from(width), f64::from(height));
+                let rect = Rect::new(0.0, 0.0, f32::from(width), f32::from(height));
                 rect.area(); // Should not panic.
-                assert_eq!(rect.width(), f64::from(width));
-                assert_eq!(rect.height(), f64::from(height));
+                assert_eq!(rect.width(), f32::from(width));
+                assert_eq!(rect.height(), f32::from(height));
             }
         }
 

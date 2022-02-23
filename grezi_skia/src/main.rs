@@ -22,7 +22,7 @@ static mut FONT_CACHE: MaybeUninit<FontCollection> = MaybeUninit::uninit();
 struct Opts {
     #[structopt(short, long, default_value = "0.5")]
     /// The delay between slides in seconds
-    delay: f64,
+    delay: f32,
     #[structopt(long)]
     /// Deactivate VSYNC
     no_vsync: bool,
@@ -168,9 +168,7 @@ impl grezi::Object for ObjectType {
         }
     }
 
-    fn bounds(&mut self, w: f64, h: f64) -> anyhow::Result<(f64, f64)> {
-        let w = w as f32;
-        let h = h as f32;
+    fn bounds(&mut self, w: f32, h: f32) -> anyhow::Result<(f32, f32)> {
         match self {
             ObjectType::Text {
                 value,
@@ -204,7 +202,7 @@ impl grezi::Object for ObjectType {
                 if built.height() > h {
                     bail!("This text overflows the slide. text should be less than {h} pixels high")
                 } else {
-                    Ok((built.max_width() as f64, built.height() as f64))
+                    Ok((built.max_width(), built.height()))
                 }
             }
             ObjectType::Image(image) => {
@@ -215,7 +213,7 @@ impl grezi::Object for ObjectType {
                 let ds = nw.min(nh);
                 let ss = width.max(height);
 
-                Ok(((ds * width / ss) as f64, (ds * height / ss) as f64))
+                Ok(((ds * width / ss), (ds * height / ss)))
             }
             ObjectType::Point => unimplemented!(),
         }
@@ -226,20 +224,26 @@ fn main() -> anyhow::Result<()> {
     rayon::ThreadPoolBuilder::new().build_global()?;
     let opts = Opts::from_args();
     let map = unsafe { memmap::Mmap::map(&std::fs::File::open(opts.file)?)? };
-    let logical_size = skulpin::winit::dpi::LogicalSize::new(1920.0, 1080.0);
-    let visible_range = skulpin::skia_safe::Rect {
-        left: 0.0,
-        right: logical_size.width,
-        top: 0.0,
-        bottom: logical_size.height,
+    let event_loop = EventLoop::new();
+    let winit_window = WindowBuilder::new()
+        .with_title("Grezi")
+        .with_fullscreen(Some(Fullscreen::Borderless(None)))
+        .with_transparent(true)
+        .build(&event_loop)?;
+    let window_size = winit_window.inner_size();
+    let mut extents = RafxExtents2D {
+        width: window_size.width,
+        height: window_size.height,
     };
+    let mut s_factor = winit_window.scale_factor();
+    let monitor_size = winit_window.current_monitor().unwrap().size();
     let size = Rect {
         left: 0.0,
         top: 0.0,
         // windowed_context.window().inner_size().width as u16
-        right: logical_size.width as f64,
+        right: monitor_size.width as f32,
         // dbg!(windowed_context.window().inner_size().height) as u16
-        bottom: logical_size.height as f64,
+        bottom: monitor_size.height as f32,
     };
     let font_mgr = unsafe { FONT_CACHE.write(FontCollection::new()) };
     font_mgr.set_default_font_manager(FontMgr::default(), None);
@@ -258,29 +262,13 @@ fn main() -> anyhow::Result<()> {
             bail!("Failed to compile presentation")
         }
     };
-    let event_loop = EventLoop::new();
-    let winit_window = WindowBuilder::new()
-        .with_title("Grezi")
-        .with_inner_size(logical_size)
-        .with_fullscreen(Some(Fullscreen::Borderless(None)))
-        .with_transparent(true)
-        .build(&event_loop)?;
-    let window_size = winit_window.inner_size();
-    let mut extents = RafxExtents2D {
-        width: window_size.width,
-        height: window_size.height,
-    };
-    let mut s_factor = winit_window.scale_factor();
     #[cfg(debug_assertions)]
     for i in slideshow.iter_mut() {
         i.1 = 1.0;
         i.step();
     }
     let mut skia = skulpin::RendererBuilder::new()
-        .coordinate_system(skulpin::CoordinateSystem::VisibleRange(
-            visible_range,
-            skulpin::skia_safe::matrix::ScaleToFit::Center,
-        ))
+        .coordinate_system(skulpin::CoordinateSystem::Physical)
         .vsync_enabled(!opts.no_vsync)
         .build(&winit_window, extents)?;
     let mut index = 0;
@@ -288,7 +276,11 @@ fn main() -> anyhow::Result<()> {
     let mut previous_frame_start = Instant::now();
     event_loop.run(move |e, _window_target, control_flow| {
         let frame_start = Instant::now();
-        *control_flow = ControlFlow::Wait;
+        *control_flow = if drawing {
+            ControlFlow::Poll
+        } else {
+            ControlFlow::Wait
+        };
 
         match e {
             Event::WindowEvent {
@@ -357,6 +349,19 @@ fn main() -> anyhow::Result<()> {
                 }
                 _ => {}
             },
+            Event::MainEventsCleared => {
+                if drawing {
+                    slideshow[index].1 +=
+                        (frame_start - previous_frame_start).as_secs_f32() / opts.delay;
+                    if slideshow[index].1 >= 1.0 {
+                        slideshow[index].1 = 1.0;
+                        drawing = false;
+                    }
+                    slideshow[index].step();
+                    previous_frame_start = frame_start;
+                    winit_window.request_redraw();
+                }
+            }
             Event::RedrawRequested(_) => {
                 skia.draw(extents, s_factor, |canvas, _coordinate_system_helper| {
                     canvas.clear(Color4f::new(0.39, 0.39, 0.39, 1.0));
@@ -365,22 +370,6 @@ fn main() -> anyhow::Result<()> {
                 .unwrap();
             }
             _ => (),
-        }
-
-        if drawing {
-            slideshow[index].1 += (frame_start - previous_frame_start).as_secs_f64() / opts.delay;
-            if slideshow[index].1 >= 1.0 {
-                slideshow[index].1 = 1.0;
-                drawing = false;
-            }
-            slideshow[index].step();
-            skia.draw(extents, s_factor, |canvas, _coordinate_system_helper| {
-                canvas.clear(Color4f::new(0.39, 0.39, 0.39, 1.0));
-                draw(&slideshow[index], canvas, font_mgr);
-            })
-            .unwrap();
-            previous_frame_start = frame_start;
-            *control_flow = ControlFlow::Poll;
         }
     });
 }
@@ -393,10 +382,10 @@ pub fn draw(
     for cmd in slide.0.iter() {
         #[cfg(debug_assertions)]
         let workrect = skulpin::skia_safe::Rect::new(
-            cmd.obj.parameters.position.x as f32,
-            cmd.obj.parameters.position.y as f32,
-            cmd.obj.parameters.position.z as f32,
-            cmd.obj.parameters.position.w as f32,
+            cmd.obj.parameters.position.x,
+            cmd.obj.parameters.position.y,
+            cmd.obj.parameters.position.z,
+            cmd.obj.parameters.position.w,
         );
         match cmd.obj.obj_type {
             ObjectType::Text {
@@ -427,10 +416,7 @@ pub fn draw(
                 built.layout(max_width);
                 built.paint(
                     canvas,
-                    (
-                        cmd.obj.parameters.position.x as f32,
-                        cmd.obj.parameters.position.y as f32,
-                    ),
+                    (cmd.obj.parameters.position.x, cmd.obj.parameters.position.y),
                 );
             }
             ObjectType::Image(ref img) => {
@@ -439,10 +425,10 @@ pub fn draw(
                     img,
                     None,
                     skulpin::skia_safe::Rect::new(
-                        cmd.obj.parameters.position.x as f32,
-                        cmd.obj.parameters.position.y as f32,
-                        cmd.obj.parameters.position.z as f32,
-                        cmd.obj.parameters.position.w as f32,
+                        cmd.obj.parameters.position.x,
+                        cmd.obj.parameters.position.y,
+                        cmd.obj.parameters.position.z,
+                        cmd.obj.parameters.position.w,
                     ),
                     &paint,
                 );
