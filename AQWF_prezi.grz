@@ -13,8 +13,6 @@ Subtitle: Paragraph(
 );
 
 {
-	Title: TitleBox[0] (
-		Move(__..);
-	),
-	Subtitle: TitleBox[1];__^^,
+	Title: TitleBox[0];__..,
+	Subtitle: TitleBox[1];^^..,
 };
