@@ -5,11 +5,11 @@ use ariadne::Label;
 use grezi::{layout::Rect, AHashMap, Slide};
 use skulpin::{
     rafx::api::RafxExtents2D,
-    skia_bindings::skia_textlayout_Paragraph,
+    skia_bindings::{skia_textlayout_ParagraphStyle, skia_textlayout_TextStyle},
     skia_safe::{
         textlayout::{FontCollection, ParagraphBuilder, ParagraphStyle, TextAlign, TextStyle},
         wrapper::PointerWrapper,
-        Color4f, Font, FontMgr, FontStyle, RefHandle, Typeface,
+        Color4f, Font, FontMgr, FontStyle, Handle, RefHandle, Typeface,
     },
     winit::{
         event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
@@ -37,7 +37,9 @@ struct Opts {
 pub enum ObjectType {
     /// Draw text to the screen
     Text {
-        paragraph: *mut skia_textlayout_Paragraph,
+        style: Handle<skia_textlayout_TextStyle>,
+        p_style: *mut skia_textlayout_ParagraphStyle,
+        value: String,
         max_width: f32,
     },
     /// Draw a circle to the screen
@@ -90,20 +92,21 @@ impl grezi::Object for ObjectType {
                     .set_font_size(font_size)
                     .set_typeface(typeface)
                     .set_font_families(&[font_family]);
-                let mut style = ParagraphStyle::new();
-                style.set_text_align(alignment).set_text_style(&text_style);
-                let mut paragraph =
-                    ParagraphBuilder::new(&style, unsafe { FONT_CACHE.assume_init_ref() });
-                paragraph.add_text(&value);
-                let built = paragraph.build();
+
                 let max_width = value
                     .lines()
                     .map(|f| font.measure_str(f, None).1.width())
                     .max_by(|f, g| f.partial_cmp(g).unwrap())
                     .unwrap()
                     + 10.0;
+                let mut p_style = ParagraphStyle::new();
+                p_style
+                    .set_text_align(alignment)
+                    .set_text_style(&text_style);
                 Ok(ObjectType::Text {
-                    paragraph: built.unwrap(),
+                    style: text_style,
+                    p_style: p_style.unwrap(),
+                    value,
                     max_width,
                 })
             }
@@ -153,20 +156,20 @@ impl grezi::Object for ObjectType {
                     .set_font_size(font_size)
                     .set_typeface(typeface)
                     .set_font_families(&[font_family]);
-                let mut style = ParagraphStyle::new();
-                style.set_text_align(alignment).set_text_style(&text_style);
-                let mut paragraph =
-                    ParagraphBuilder::new(&style, unsafe { FONT_CACHE.assume_init_ref() });
-                paragraph.add_text(&value);
-                let built = paragraph.build();
                 let max_width = value
                     .lines()
                     .map(|f| font.measure_str(f, None).1.width())
                     .max_by(|f, g| f.partial_cmp(g).unwrap())
                     .unwrap()
                     + 10.0;
+                let mut p_style = ParagraphStyle::new();
+                p_style
+                    .set_text_align(alignment)
+                    .set_text_style(&text_style);
                 Ok(ObjectType::Text {
-                    paragraph: built.unwrap(),
+                    style: text_style,
+                    p_style: p_style.unwrap(),
+                    value,
                     max_width,
                 })
             }
@@ -200,20 +203,26 @@ impl grezi::Object for ObjectType {
     fn bounds(&mut self, w: f32, h: f32) -> anyhow::Result<(f32, f32)> {
         match self {
             ObjectType::Text {
-                ref paragraph,
+                p_style,
+                ref value,
                 max_width,
+                ..
             } => {
                 if *max_width > w {
                     *max_width = w
                 }
-                let mut p = unsafe { RefHandle::wrap(*paragraph).unwrap_unchecked() };
-                p.layout(*max_width);
-                let width = p.max_width();
-                let height = p.height();
+                let p_style = unsafe { RefHandle::wrap(*p_style).unwrap_unchecked() };
+                let mut paragraph =
+                    ParagraphBuilder::new(&p_style, unsafe { FONT_CACHE.assume_init_ref() });
+                paragraph.add_text(value);
+                let mut built = paragraph.build();
+                built.layout(*max_width);
+                let width = built.max_width();
+                let height = built.height();
                 if height > h {
                     bail!("This text overflows the slide. text should be less than {h} pixels high")
                 } else {
-                    p.unwrap();
+                    p_style.unwrap();
                     Ok((width, height))
                 }
             }
@@ -377,7 +386,7 @@ fn main() -> anyhow::Result<()> {
             Event::RedrawRequested(_) => {
                 skia.draw(extents, s_factor, |canvas, _coordinate_system_helper| {
                     canvas.clear(Color4f::new(0.39, 0.39, 0.39, 1.0));
-                    draw(&slideshow[index], canvas);
+                    draw(&mut slideshow[index], canvas);
                 })
                 .unwrap();
                 std::thread::yield_now();
@@ -387,8 +396,8 @@ fn main() -> anyhow::Result<()> {
     });
 }
 
-pub fn draw(slide: &Slide<ObjectType>, canvas: &mut skulpin::skia_safe::Canvas) {
-    for cmd in slide.0.iter() {
+pub fn draw(slide: &mut Slide<ObjectType>, canvas: &mut skulpin::skia_safe::Canvas) {
+    for cmd in slide.0.iter_mut() {
         #[cfg(debug_assertions)]
         let workrect = skulpin::skia_safe::Rect::new(
             cmd.obj.parameters.position.x,
@@ -397,13 +406,30 @@ pub fn draw(slide: &Slide<ObjectType>, canvas: &mut skulpin::skia_safe::Canvas) 
             cmd.obj.parameters.position.w,
         );
         match cmd.obj.obj_type {
-            ObjectType::Text { paragraph, .. } => {
-                let p = unsafe { RefHandle::wrap(paragraph).unwrap_unchecked() };
-                p.paint(
+            ObjectType::Text {
+                ref mut style,
+                p_style,
+                ref value,
+                max_width,
+            } => {
+                style.set_color(skulpin::skia_safe::Color::from_argb(
+                    cmd.obj.parameters.opacity as u8,
+                    255,
+                    255,
+                    255,
+                ));
+                let mut p_style = unsafe { RefHandle::wrap(p_style).unwrap_unchecked() };
+                p_style.set_text_style(style);
+                let mut paragraph =
+                    ParagraphBuilder::new(&p_style, unsafe { FONT_CACHE.assume_init_ref() });
+                paragraph.add_text(value);
+                let mut built = paragraph.build();
+                built.layout(max_width);
+                built.paint(
                     canvas,
                     (cmd.obj.parameters.position.x, cmd.obj.parameters.position.y),
                 );
-                p.unwrap();
+                p_style.unwrap();
             }
             ObjectType::Image(ref img) => {
                 let paint = skulpin::skia_safe::Paint::new(Color4f::new(1.0, 1.0, 1.0, 1.0), None);
