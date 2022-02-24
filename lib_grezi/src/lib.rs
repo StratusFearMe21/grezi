@@ -77,7 +77,7 @@ use ahash::RandomState;
 /// A type alias for a [`std::collections::HashMap`] which uses [`ahash`] as it's hasher.
 pub type AHashMap<K, V> = std::collections::HashMap<K, V, RandomState>;
 use chumsky::prelude::*;
-use glam::Vec4;
+use glam::{const_vec4, Vec4};
 use layout::{Constraint, Layout, Rect};
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 
@@ -256,13 +256,26 @@ pub struct SlideObject<T: Object + Clone> {
 }
 
 /// A slide
-pub struct Slide<T: Object + Clone>(pub Vec<Cmd<T>>, pub f32);
+pub struct Slide<T: Object + Clone> {
+    /// The commands inside the slide
+    pub cmds: Vec<Cmd<T>>,
+    /// The current frame the slide is on between 0.0-1.0
+    pub step: f32,
+    bg_from: Vec4,
+    bg_to: Vec4,
+}
 
 impl<T: Object + Clone> Slide<T> {
     /// Steps the entire slide forward, returning if anything changed.
     #[inline]
-    pub fn step(&mut self) {
-        self.0.par_iter_mut().for_each(|f| f.step(self.1));
+    pub fn step(&mut self) -> Vec4 {
+        let ease = if self.step < 0.5 {
+            4.0 * self.step.powi(3)
+        } else {
+            (self.step - 1.0).mul_add((2.0 * self.step - 2.0).powi(2), 1.0)
+        };
+        self.cmds.par_iter_mut().for_each(|f| f.step(ease));
+        self.bg_from.lerp(self.bg_to, ease)
     }
 }
 
@@ -283,12 +296,7 @@ unsafe impl<T: Object + Clone> Sync for Cmd<T> {}
 impl<T: Object + Clone> Cmd<T> {
     /// Step the given command forward
     #[inline]
-    pub fn step(&mut self, step: f32) {
-        let ease = if step < 0.5 {
-            4.0 * step.powi(3)
-        } else {
-            (step - 1.0).mul_add((2.0 * step - 2.0).powi(2), 1.0)
-        };
+    pub fn step(&mut self, ease: f32) {
         self.obj.parameters.position = self.iter_from.position.lerp(self.iter_to.position, ease);
         self.obj.parameters.opacity =
             self.iter_from.opacity + (self.iter_to.opacity - self.iter_from.opacity) * ease;
@@ -461,7 +469,7 @@ pub fn tokenizer(data: &[u8]) -> (Option<Vec<Token>>, Vec<Simple<u8>>) {
 }
 
 /// Converts a `.grz` file into a full slide show made up of commands. Commands contain the object
-/// to be drawn as well as the iterator deciding where objects actually go to.
+/// to be drawn as wellwas the iterator deciding where objects actually go to.
 pub fn file_to_slideshow<K: Object + Clone>(
     file: &[u8],
     size: Rect,
@@ -469,14 +477,16 @@ pub fn file_to_slideshow<K: Object + Clone>(
 ) -> Slideshow<K> {
     let mut layouts: AHashMap<&str, Vec<Rect>> = AHashMap::default();
     let mut unused_objects: AHashMap<&str, SlideObject<K>> = AHashMap::default();
-    let mut objects_in_view: AHashMap<&str, (*const SlideObject<K>, Rect)> = AHashMap::default();
+    let mut objects_in_view: AHashMap<&str, (*const SlideObject<K>, Rect, Vec4)> =
+        AHashMap::default();
     let mut slides: Vec<Slide<K>> = Vec::new();
     let mut registers: AHashMap<&str, &str> = AHashMap::default();
     registers.insert("FONT_SIZE", "48");
     registers.insert("HEADER_FONT_SIZE_ADD", "24");
     registers.insert("FONT_FAMILY", "Helvetica");
     registers.insert("HEADER_FONT_FAMILY", "Helvetica");
-    registers.insert("VIEWBOX_MARGIN", "50");
+    registers.insert("VIEWBOX_MARGIN", "25");
+    registers.insert("BG_COLOR", "0.39, 0.39, 0.39, 1.0");
     let mut errors = Vec::new();
 
     let tokens = match tokenizer(file) {
@@ -487,16 +497,42 @@ pub fn file_to_slideshow<K: Object + Clone>(
         (None, e) => return Err(e),
     };
 
+    let mut bg = const_vec4!([0.39, 0.39, 0.39, 1.0]);
+    let mut last_bg = bg;
     for i in tokens.iter() {
         match i {
             Token::Slide(cmds, span) => unsafe {
-                let mut new_slide = Slide(Vec::with_capacity(cmds.len()), 0.0);
+                let mut bg_parser = registers.get("BG_COLOR").unwrap_unchecked().split(",");
+                bg.x = bg_parser.next().unwrap().trim().parse().unwrap();
+                bg.y = bg_parser.next().unwrap().trim().parse().unwrap();
+                bg.z = bg_parser.next().unwrap().trim().parse().unwrap();
+                bg.w = bg_parser.next().unwrap().trim().parse().unwrap();
+                let mut new_slide = Slide {
+                    cmds: Vec::with_capacity(cmds.len()),
+                    step: 0.0,
+                    bg_from: last_bg,
+                    bg_to: bg,
+                };
+                last_bg = bg;
                 let mut modified_names: Vec<&str> = Vec::with_capacity(cmds.len());
                 for (((name, split), split_index), (from, goto)) in cmds.iter() {
                     let vbx = if let Some(rect) = layouts.get(split.as_str()) {
                         rect[*split_index]
                     } else if split == "Size" {
-                        size
+                        let vbx_margin = registers.get("VIEWBOX_MARGIN").unwrap_unchecked();
+                        let margin = if let Ok(num) = vbx_margin.parse::<f32>() {
+                            num
+                        } else {
+                            errors.push(Simple::custom(
+                                span.clone(),
+                                format!("\"{}\" is not a valid floating point number", vbx_margin),
+                            ));
+                            continue;
+                        };
+                        size.inner(&layout::Margin {
+                            vertical: margin,
+                            horizontal: margin,
+                        })
                     } else {
                         errors.push(Simple::custom(
                             span.clone(),
@@ -505,11 +541,18 @@ pub fn file_to_slideshow<K: Object + Clone>(
                         continue;
                     };
                     if let Some(obj) = objects_in_view.get_mut(name.as_str()) {
-                        let obj_slide = (*(obj.0)).clone();
-                        let w = obj_slide.parameters.position.z - obj_slide.parameters.position.x;
-                        let h = obj_slide.parameters.position.w - obj_slide.parameters.position.y;
+                        let mut obj_slide = (*(obj.0)).clone();
+                        let w = obj.2.z - obj.2.x;
+                        let h = obj.2.w - obj.2.y;
                         let pos_rect_from_xy = get_pos!(fold_lineup(from), obj.1, (w, h));
-                        let pos_rect_goto_xy = get_pos!(fold_lineup(goto), vbx, (w, h));
+                        let bounds = match obj_slide.obj_type.bounds(vbx.width(), vbx.height()) {
+                            Ok(b) => b,
+                            Err(e) => {
+                                errors.push(Simple::custom(span.clone(), e));
+                                continue;
+                            }
+                        };
+                        let pos_rect_goto_xy = get_pos!(fold_lineup(goto), vbx, bounds);
                         let pos_rect_from = Vec4::new(
                             pos_rect_from_xy.0,
                             pos_rect_from_xy.1,
@@ -519,11 +562,12 @@ pub fn file_to_slideshow<K: Object + Clone>(
                         let pos_rect_goto = Vec4::new(
                             pos_rect_goto_xy.0,
                             pos_rect_goto_xy.1,
-                            pos_rect_goto_xy.0 + w,
-                            pos_rect_goto_xy.1 + h,
+                            pos_rect_goto_xy.0 + bounds.0,
+                            pos_rect_goto_xy.1 + bounds.1,
                         );
                         obj.1 = vbx;
-                        new_slide.0.push(Cmd {
+                        obj.2 = pos_rect_goto;
+                        new_slide.cmds.push(Cmd {
                             obj: obj_slide,
                             iter_from: Parameters {
                                 position: pos_rect_from.into(),
@@ -554,8 +598,6 @@ pub fn file_to_slideshow<K: Object + Clone>(
                                 continue;
                             }
                         };
-                        obj_slide.parameters.position.z = bounds.0;
-                        obj_slide.parameters.position.w = bounds.1;
                         let pos_rect_from_xy = get_pos!(fold_lineup(from), vbx, bounds);
                         let pos_rect_goto_xy = get_pos!(fold_lineup(goto), vbx, bounds);
                         let pos_rect_from = Vec4::new(
@@ -570,7 +612,7 @@ pub fn file_to_slideshow<K: Object + Clone>(
                             pos_rect_goto_xy.0 + bounds.0,
                             pos_rect_goto_xy.1 + bounds.1,
                         );
-                        new_slide.0.push(Cmd {
+                        new_slide.cmds.push(Cmd {
                             obj: obj_slide,
                             iter_from: Parameters {
                                 position: pos_rect_from.into(),
@@ -582,9 +624,9 @@ pub fn file_to_slideshow<K: Object + Clone>(
                             },
                         });
                         modified_names.push(name);
-                        match new_slide.0.last() {
+                        match new_slide.cmds.last() {
                             Some(Cmd { obj, .. }) => {
-                                objects_in_view.insert(name, (obj, vbx));
+                                objects_in_view.insert(name, (obj, vbx, pos_rect_goto));
                             }
                             _ => core::hint::unreachable_unchecked(),
                         }
@@ -595,22 +637,36 @@ pub fn file_to_slideshow<K: Object + Clone>(
             },
             Token::Viewbox(((((name, split), split_index), direction), constraints), span) => {
                 let vbx_margin = unsafe { registers.get("VIEWBOX_MARGIN").unwrap_unchecked() };
-                let rects = Layout::default()
-                    .margin(if let Ok(num) = vbx_margin.parse() {
-                        num
-                    } else {
-                        errors.push(Simple::custom(
-                            span.clone(),
-                            format!("\"{}\" is not a valid floating point number", vbx_margin),
-                        ));
-                        continue;
-                    })
+                let margin = if let Ok(num) = vbx_margin.parse::<f32>() {
+                    num
+                } else {
+                    errors.push(Simple::custom(
+                        span.clone(),
+                        format!("\"{}\" is not a valid floating point number", vbx_margin),
+                    ));
+                    continue;
+                };
+                let mut rects = Layout::default()
                     .direction(direction)
                     .constraints(constraints)
                     .split(if let Some(rect) = layouts.get(split.as_str()) {
                         rect[*split_index]
                     } else if split == "Size" {
-                        size
+                        let vbx_margin =
+                            unsafe { registers.get("VIEWBOX_MARGIN").unwrap_unchecked() };
+                        let margin = if let Ok(num) = vbx_margin.parse::<f32>() {
+                            num
+                        } else {
+                            errors.push(Simple::custom(
+                                span.clone(),
+                                format!("\"{}\" is not a valid floating point number", vbx_margin),
+                            ));
+                            continue;
+                        };
+                        size.inner(&layout::Margin {
+                            vertical: margin,
+                            horizontal: margin,
+                        })
                     } else {
                         errors.push(Simple::custom(
                             span.clone(),
@@ -618,6 +674,12 @@ pub fn file_to_slideshow<K: Object + Clone>(
                         ));
                         continue;
                     });
+                rects.iter_mut().for_each(|f| {
+                    *f = f.inner(&layout::Margin {
+                        vertical: margin,
+                        horizontal: margin,
+                    })
+                });
                 layouts.insert(name, rects);
             }
             Token::Obj(((name, type_), values), span) => {

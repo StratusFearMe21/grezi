@@ -1,15 +1,15 @@
-use std::{mem::MaybeUninit, time::Instant};
+use std::{mem::MaybeUninit, path::PathBuf, time::Instant};
 
 use anyhow::{bail, Context};
 use ariadne::Label;
-use grezi::{layout::Rect, AHashMap, Slide};
+use grezi::{layout::Rect, AHashMap};
 use skulpin::{
     rafx::api::RafxExtents2D,
     skia_bindings::{skia_textlayout_ParagraphStyle, skia_textlayout_TextStyle},
     skia_safe::{
         textlayout::{FontCollection, ParagraphBuilder, ParagraphStyle, TextAlign, TextStyle},
         wrapper::PointerWrapper,
-        Color4f, Font, FontMgr, FontStyle, Handle, RefHandle, Typeface,
+        Color4f, Font, FontMgr, FontStyle, Handle, Paint, RefHandle, Typeface,
     },
     winit::{
         event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
@@ -29,7 +29,7 @@ struct Opts {
     /// Deactivate VSYNC
     no_vsync: bool,
     /// The file for Grezi to open
-    file: String,
+    file: PathBuf,
 }
 
 #[derive(Debug, Clone)]
@@ -39,15 +39,15 @@ pub enum ObjectType {
     Text {
         style: Handle<skia_textlayout_TextStyle>,
         p_style: *mut skia_textlayout_ParagraphStyle,
-        value: String,
+        value: *mut [u8],
         max_width: f32,
     },
     /// Draw a circle to the screen
     Point,
-    Image(
-        /// The image itself
-        skulpin::skia_safe::Image,
-    ),
+    Image {
+        img: skulpin::skia_safe::Image,
+        dont_resize: bool,
+    },
 }
 
 impl grezi::Object for ObjectType {
@@ -77,8 +77,8 @@ impl grezi::Object for ObjectType {
                 .as_deref()
                 {
                     Some("left") | Some("Left") => TextAlign::Left,
-                    Some("right") | Some("Right") => TextAlign::Right,
-                    _ => TextAlign::Center,
+                    Some("center") | Some("Center") => TextAlign::Center,
+                    _ => TextAlign::Right,
                 };
                 let font_size = values.remove("font_size").map_or_else(
                     || unsafe { registers.get("FONT_SIZE").unwrap_unchecked().parse::<f32>() },
@@ -106,7 +106,7 @@ impl grezi::Object for ObjectType {
                 Ok(ObjectType::Text {
                     style: text_style,
                     p_style: p_style.unwrap(),
-                    value,
+                    value: value.into_bytes().leak() as *mut [u8],
                     max_width,
                 })
             }
@@ -130,8 +130,8 @@ impl grezi::Object for ObjectType {
                 .as_deref()
                 {
                     Some("left") | Some("Left") => TextAlign::Left,
-                    Some("right") | Some("Right") => TextAlign::Right,
-                    _ => TextAlign::Center,
+                    Some("center") | Some("Center") => TextAlign::Center,
+                    _ => TextAlign::Right,
                 };
                 let font_size = values.remove("font_size").map_or_else(
                     || {
@@ -169,7 +169,7 @@ impl grezi::Object for ObjectType {
                 Ok(ObjectType::Text {
                     style: text_style,
                     p_style: p_style.unwrap(),
-                    value,
+                    value: value.into_bytes().leak() as *mut [u8],
                     max_width,
                 })
             }
@@ -183,16 +183,21 @@ impl grezi::Object for ObjectType {
             }
             */
             "Image" | "image" | "img" | "IMG" | "pic" | "Pic" | "Picture" | "picture" => {
+                let dont_resize = values
+                    .get("dont_resize")
+                    .map_or_else(|| Ok(false), |k| k.parse())?;
                 let image = unsafe {
                     memmap::Mmap::map(&std::fs::File::open(
                         values.remove("path").context("Images require a path")?,
                     )?)?
                 };
-                let image = skulpin::skia_safe::image::Image::from_encoded(
-                    skulpin::skia_safe::Data::new_copy(&image),
-                )
-                .context("Invalid image passed")?;
-                Ok(ObjectType::Image(image))
+                Ok(ObjectType::Image {
+                    img: skulpin::skia_safe::image::Image::from_encoded(
+                        skulpin::skia_safe::Data::new_copy(&image),
+                    )
+                    .context("Invalid image passed")?,
+                    dont_resize,
+                })
             }
             e => {
                 bail!("Object cannot have type {}", e)
@@ -203,7 +208,7 @@ impl grezi::Object for ObjectType {
     fn bounds(&mut self, w: f32, h: f32) -> anyhow::Result<(f32, f32)> {
         match self {
             ObjectType::Text {
-                p_style,
+                ref p_style,
                 ref value,
                 max_width,
                 ..
@@ -214,7 +219,7 @@ impl grezi::Object for ObjectType {
                 let p_style = unsafe { RefHandle::wrap(*p_style).unwrap_unchecked() };
                 let mut paragraph =
                     ParagraphBuilder::new(&p_style, unsafe { FONT_CACHE.assume_init_ref() });
-                paragraph.add_text(value);
+                paragraph.add_text(unsafe { std::str::from_utf8_unchecked(&**value) });
                 let mut built = paragraph.build();
                 built.layout(*max_width);
                 let width = built.max_width();
@@ -226,15 +231,41 @@ impl grezi::Object for ObjectType {
                     Ok((width, height))
                 }
             }
-            ObjectType::Image(image) => {
-                let width = image.width() as f32;
-                let height = image.height() as f32;
-                let nw = if width > w { w } else { width };
-                let nh = if height > h { h } else { height };
+            ObjectType::Image {
+                img, dont_resize, ..
+            } => {
+                let width = img.width() as f32;
+                let height = img.height() as f32;
+                let nw = if width > w || !*dont_resize { w } else { width };
+                let nh = if height > h || !*dont_resize {
+                    h
+                } else {
+                    height
+                };
                 let ds = nw.min(nh);
                 let ss = width.max(height);
 
-                Ok(((ds * width / ss), (ds * height / ss)))
+                let wh = (ds * width / ss, ds * height / ss);
+
+                let mut canvas =
+                    skulpin::skia_safe::Surface::new_raster_n32_premul((wh.0 as i32, wh.1 as i32))
+                        .context("Invalid canvas")?;
+
+                canvas.canvas().draw_image_rect(
+                    &img,
+                    None,
+                    skulpin::skia_safe::Rect {
+                        left: 0.0,
+                        top: 0.0,
+                        right: wh.0,
+                        bottom: wh.1,
+                    },
+                    &Paint::default(),
+                );
+
+                *img = canvas.image_snapshot();
+
+                Ok(wh)
             }
             ObjectType::Point => unimplemented!(),
         }
@@ -249,7 +280,6 @@ fn main() -> anyhow::Result<()> {
     let winit_window = WindowBuilder::new()
         .with_title("Grezi")
         .with_fullscreen(Some(Fullscreen::Borderless(None)))
-        .with_transparent(true)
         .build(&event_loop)?;
     let window_size = winit_window.inner_size();
     let mut extents = RafxExtents2D {
@@ -266,16 +296,16 @@ fn main() -> anyhow::Result<()> {
         // dbg!(windowed_context.window().inner_size().height) as u16
         bottom: monitor_size.height as f32,
     };
-    let font_mgr = unsafe { FONT_CACHE.write(FontCollection::new()) };
-    font_mgr.set_default_font_manager(FontMgr::default(), None);
-    let mut slideshow = match grezi::file_to_slideshow(&map, size, 255.0) {
+    unsafe { FONT_CACHE.write(FontCollection::new()) }
+        .set_default_font_manager(FontMgr::default(), None);
+    let mut slideshow = match grezi::file_to_slideshow(&map, size, 1.0) {
         Ok(slides) => slides,
         Err(errors) => {
             let mut report = ariadne::Report::build(ariadne::ReportKind::Error, (), 0);
             for e in errors {
                 report = report
                     .with_label(Label::new(e.span()).with_message(&e))
-                    .with_message(e.label().unwrap_or("Unknown Error"))
+                    .with_message(e.label().context("Unknown Error")?)
             }
             report.finish().eprint(ariadne::Source::from(unsafe {
                 std::str::from_utf8_unchecked(map.as_ref())
@@ -283,11 +313,6 @@ fn main() -> anyhow::Result<()> {
             bail!("Failed to compile presentation")
         }
     };
-    #[cfg(debug_assertions)]
-    for i in slideshow.iter_mut() {
-        i.1 = 1.0;
-        i.step();
-    }
     let mut skia = skulpin::RendererBuilder::new()
         .coordinate_system(skulpin::CoordinateSystem::Physical)
         .vsync_enabled(!opts.no_vsync)
@@ -295,6 +320,7 @@ fn main() -> anyhow::Result<()> {
     let mut index = 0;
     let mut drawing = true;
     let mut previous_frame_start = Instant::now();
+    let mut bg = Color4f::new(0.39, 0.39, 0.39, 1.0);
     event_loop.run(move |e, _window_target, control_flow| {
         let frame_start = Instant::now();
         *control_flow = if drawing {
@@ -336,6 +362,40 @@ fn main() -> anyhow::Result<()> {
             }
             Event::WindowEvent {
                 event:
+                    WindowEvent::MouseInput {
+                        state: ElementState::Pressed,
+                        button,
+                        ..
+                    },
+                ..
+            } => match button {
+                skulpin::app::MouseButton::Left => {
+                    if index != slideshow.len() - 1 {
+                        index += 1;
+                        drawing = true;
+                        previous_frame_start = frame_start;
+                    } else {
+                        *control_flow = ControlFlow::Exit;
+                        return;
+                    }
+                }
+                skulpin::app::MouseButton::Right => {
+                    if index != 0 {
+                        unsafe {
+                            slideshow.get_unchecked_mut(index).step = 0.0;
+                        }
+                        index -= 1;
+                        unsafe {
+                            slideshow.get_unchecked_mut(index).step = 1.0;
+                        }
+                        drawing = true;
+                        previous_frame_start = frame_start;
+                    }
+                }
+                _ => {}
+            },
+            Event::WindowEvent {
+                event:
                     WindowEvent::KeyboardInput {
                         input:
                             KeyboardInput {
@@ -356,14 +416,17 @@ fn main() -> anyhow::Result<()> {
                         index += 1;
                         drawing = true;
                         previous_frame_start = frame_start;
-                    } else {
-                        *control_flow = ControlFlow::Exit;
-                        return;
                     }
                 }
                 Some(VirtualKeyCode::Left) => {
                     if index != 0 {
+                        unsafe {
+                            slideshow.get_unchecked_mut(index).step = 0.0;
+                        }
                         index -= 1;
+                        unsafe {
+                            slideshow.get_unchecked_mut(index).step = 1.0;
+                        }
                         drawing = true;
                         previous_frame_start = frame_start;
                     }
@@ -372,21 +435,119 @@ fn main() -> anyhow::Result<()> {
             },
             Event::MainEventsCleared => {
                 if drawing {
-                    slideshow[index].1 +=
-                        (frame_start - previous_frame_start).as_secs_f32() / opts.delay;
-                    if slideshow[index].1 >= 1.0 {
-                        slideshow[index].1 = 1.0;
+                    let slide = unsafe { slideshow.get_unchecked_mut(index) };
+                    slide.step += (frame_start - previous_frame_start).as_secs_f32() / opts.delay;
+                    if slide.step >= 1.0 {
+                        slide.step = 1.0;
                         drawing = false;
                     }
-                    slideshow[index].step();
                     previous_frame_start = frame_start;
+                    let bg_raw = slide.step();
+                    bg = Color4f::new(bg_raw.x, bg_raw.y, bg_raw.z, bg_raw.w);
                     winit_window.request_redraw();
                 }
             }
             Event::RedrawRequested(_) => {
+                let slide = unsafe { slideshow.get_unchecked_mut(index) };
                 skia.draw(extents, s_factor, |canvas, _coordinate_system_helper| {
-                    canvas.clear(Color4f::new(0.39, 0.39, 0.39, 1.0));
-                    draw(&mut slideshow[index], canvas);
+                    canvas.clear(bg);
+                    #[cfg(debug_assertions)]
+                    canvas.draw_str(
+                        format!(
+                            "{}",
+                            1.0 / (frame_start - previous_frame_start).as_secs_f64()
+                        ),
+                        (10.0, 10.0),
+                        &Font::new(
+                            Typeface::new("Helvetica", FontStyle::default()).unwrap(),
+                            10.0,
+                        ),
+                        &Paint::new(Color4f::new(1.0, 1.0, 1.0, 1.0), None),
+                    );
+                    for cmd in slide.cmds.iter_mut() {
+                        #[cfg(debug_assertions)]
+                        let workrect = skulpin::skia_safe::Rect::new(
+                            cmd.obj.parameters.position.x,
+                            cmd.obj.parameters.position.y,
+                            cmd.obj.parameters.position.z,
+                            cmd.obj.parameters.position.w,
+                        );
+                        match cmd.obj.obj_type {
+                            ObjectType::Text {
+                                ref mut style,
+                                p_style,
+                                value,
+                                max_width,
+                            } => {
+                                style.set_color(
+                                    skulpin::skia_safe::Color4f::new(
+                                        1.0,
+                                        1.0,
+                                        1.0,
+                                        cmd.obj.parameters.opacity,
+                                    )
+                                    .to_color(),
+                                );
+                                let mut p_style =
+                                    unsafe { RefHandle::wrap(p_style).unwrap_unchecked() };
+                                p_style.set_text_style(style);
+                                let mut paragraph = ParagraphBuilder::new(&p_style, unsafe {
+                                    FONT_CACHE.assume_init_ref()
+                                });
+                                paragraph
+                                    .add_text(unsafe { std::str::from_utf8_unchecked(&*value) });
+                                let mut built = paragraph.build();
+                                built.layout(max_width);
+                                built.paint(
+                                    canvas,
+                                    (cmd.obj.parameters.position.x, cmd.obj.parameters.position.y),
+                                );
+                                p_style.unwrap();
+                            }
+                            ObjectType::Image { ref img, .. } => {
+                                let paint = skulpin::skia_safe::Paint::new(
+                                    Color4f::new(1.0, 1.0, 1.0, cmd.obj.parameters.opacity),
+                                    None,
+                                );
+                                canvas.draw_image_rect(
+                                    img,
+                                    None,
+                                    skulpin::skia_safe::Rect {
+                                        left: cmd.obj.parameters.position.x,
+                                        top: cmd.obj.parameters.position.y,
+                                        right: cmd.obj.parameters.position.z,
+                                        bottom: cmd.obj.parameters.position.w,
+                                    },
+                                    &paint,
+                                );
+                            }
+                            _ => unimplemented!(),
+                        }
+                        #[cfg(debug_assertions)]
+                        {
+                            let paint = skulpin::skia_safe::Paint::new(
+                                skulpin::skia_safe::Color4f::new(1.0, 1.0, 0.5, 0.5),
+                                None,
+                            );
+                            canvas.draw_rect(workrect, &paint);
+                            canvas.draw_circle((workrect.left, workrect.top), 20.0, &paint);
+                        }
+                    }
+                    #[cfg(debug_assertions)]
+                    {
+                        let paint = skulpin::skia_safe::Paint::new(
+                            skulpin::skia_safe::Color4f::new(1.0, 1.0, 0.5, 0.5),
+                            None,
+                        );
+                        canvas.draw_rect(
+                            skulpin::skia_safe::Rect::from_xywh(955.0, 0.0, 10.0, 1080.0),
+                            &paint,
+                        );
+                        canvas.draw_rect(
+                            skulpin::skia_safe::Rect::from_xywh(0.0, 535.0, 1920.0, 10.0),
+                            &paint,
+                        );
+                    }
                 })
                 .unwrap();
                 std::thread::yield_now();
@@ -394,82 +555,4 @@ fn main() -> anyhow::Result<()> {
             _ => (),
         }
     });
-}
-
-pub fn draw(slide: &mut Slide<ObjectType>, canvas: &mut skulpin::skia_safe::Canvas) {
-    for cmd in slide.0.iter_mut() {
-        #[cfg(debug_assertions)]
-        let workrect = skulpin::skia_safe::Rect::new(
-            cmd.obj.parameters.position.x,
-            cmd.obj.parameters.position.y,
-            cmd.obj.parameters.position.z,
-            cmd.obj.parameters.position.w,
-        );
-        match cmd.obj.obj_type {
-            ObjectType::Text {
-                ref mut style,
-                p_style,
-                ref value,
-                max_width,
-            } => {
-                style.set_color(skulpin::skia_safe::Color::from_argb(
-                    cmd.obj.parameters.opacity as u8,
-                    255,
-                    255,
-                    255,
-                ));
-                let mut p_style = unsafe { RefHandle::wrap(p_style).unwrap_unchecked() };
-                p_style.set_text_style(style);
-                let mut paragraph =
-                    ParagraphBuilder::new(&p_style, unsafe { FONT_CACHE.assume_init_ref() });
-                paragraph.add_text(value);
-                let mut built = paragraph.build();
-                built.layout(max_width);
-                built.paint(
-                    canvas,
-                    (cmd.obj.parameters.position.x, cmd.obj.parameters.position.y),
-                );
-                p_style.unwrap();
-            }
-            ObjectType::Image(ref img) => {
-                let paint = skulpin::skia_safe::Paint::new(Color4f::new(1.0, 1.0, 1.0, 1.0), None);
-                canvas.draw_image_rect(
-                    img,
-                    None,
-                    skulpin::skia_safe::Rect::new(
-                        cmd.obj.parameters.position.x,
-                        cmd.obj.parameters.position.y,
-                        cmd.obj.parameters.position.z,
-                        cmd.obj.parameters.position.w,
-                    ),
-                    &paint,
-                );
-            }
-            _ => unimplemented!(),
-        }
-        #[cfg(debug_assertions)]
-        {
-            let paint = skulpin::skia_safe::Paint::new(
-                skulpin::skia_safe::Color4f::new(1.0, 1.0, 0.5, 0.5),
-                None,
-            );
-            canvas.draw_rect(workrect, &paint);
-            canvas.draw_circle((workrect.left, workrect.top), 20.0, &paint);
-        }
-    }
-    #[cfg(debug_assertions)]
-    {
-        let paint = skulpin::skia_safe::Paint::new(
-            skulpin::skia_safe::Color4f::new(1.0, 1.0, 0.5, 0.5),
-            None,
-        );
-        canvas.draw_rect(
-            skulpin::skia_safe::Rect::from_xywh(955.0, 0.0, 10.0, 1080.0),
-            &paint,
-        );
-        canvas.draw_rect(
-            skulpin::skia_safe::Rect::from_xywh(0.0, 535.0, 1920.0, 10.0),
-            &paint,
-        );
-    }
 }

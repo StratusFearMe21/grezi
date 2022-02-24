@@ -200,7 +200,7 @@ impl<'a> Layout<'a> {
     ///     ]
     /// );
     /// ```
-    pub fn split(self, area: Rect) -> Vec<Rect> {
+    pub fn split(self, dest_area: Rect) -> Vec<Rect> {
         let mut solver = Solver::new();
         let mut vars: AHashMap<Variable, (usize, usize)> = AHashMap::default();
         let elements = self
@@ -214,7 +214,6 @@ impl<'a> Layout<'a> {
             .map(|_| Rect::default())
             .collect::<Vec<Rect>>();
 
-        let dest_area = area.inner(&self.margin);
         for (i, e) in elements.iter().enumerate() {
             vars.insert(e.left, (i, 0));
             vars.insert(e.top, (i, 1));
@@ -414,15 +413,11 @@ impl Rect {
     /// Applies a margin to the [`Rect`]
     #[inline]
     pub fn inner(self, margin: &Margin) -> Rect {
-        if self.width() < 2.0 * margin.horizontal || self.height() < 2.0 * margin.vertical {
-            Rect::default()
-        } else {
-            Rect {
-                left: self.left + margin.horizontal,
-                top: self.top + margin.vertical,
-                right: self.right - margin.horizontal,
-                bottom: self.bottom - margin.vertical,
-            }
+        Rect {
+            left: self.left + margin.horizontal,
+            top: self.top + margin.vertical,
+            right: self.right - margin.horizontal,
+            bottom: self.bottom - margin.vertical,
         }
     }
 

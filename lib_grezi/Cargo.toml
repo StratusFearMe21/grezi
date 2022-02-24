@@ -10,9 +10,7 @@ name = "grezi"
 
 [dependencies]
 chumsky = "0.8.0"
-glam = { version = "0.20.2", features = ["mint"] }
+glam = "0.20.2"
 ahash = "0.7.6"
 cassowary = "0.3.0"
 rayon = "1.5.1"
-keyframe = "1.0.4"
-keyframe_derive = "1.0.0"
