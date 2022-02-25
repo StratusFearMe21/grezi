@@ -88,24 +88,27 @@ use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 macro_rules! get_pos {
     ($line_up:expr, $vbx:expr, $obj:expr) => {
         match $line_up {
-            LineUp::TopLeft => ($vbx.left, $vbx.top),
-            LineUp::TopRight => ($vbx.right - $obj.0, $vbx.top),
-            LineUp::BottomLeft => ($vbx.left, $vbx.bottom - $obj.1),
-            LineUp::BottomRight => ($vbx.right - $obj.0, $vbx.bottom - $obj.1),
-            LineUp::CenterTop => (($vbx.left + $vbx.right) / 2.0 - ($obj.0 / 2.0), $vbx.top),
-            LineUp::CenterBottom => (
+            LineUp::TopLeft => Some(($vbx.left, $vbx.top)),
+            LineUp::TopRight => Some(($vbx.right - $obj.0, $vbx.top)),
+            LineUp::BottomLeft => Some(($vbx.left, $vbx.bottom - $obj.1)),
+            LineUp::BottomRight => Some(($vbx.right - $obj.0, $vbx.bottom - $obj.1)),
+            LineUp::CenterTop => Some((($vbx.left + $vbx.right) / 2.0 - ($obj.0 / 2.0), $vbx.top)),
+            LineUp::CenterBottom => Some((
                 ($vbx.left + $vbx.right) / 2.0 - ($obj.0 / 2.0),
                 $vbx.bottom - $obj.1,
-            ),
-            LineUp::CenterLeft => ($vbx.left, ($vbx.top + $vbx.bottom) / 2.0 - ($obj.1 / 2.0)),
-            LineUp::CenterRight => (
+            )),
+            LineUp::CenterLeft => {
+                Some(($vbx.left, ($vbx.top + $vbx.bottom) / 2.0 - ($obj.1 / 2.0)))
+            }
+            LineUp::CenterRight => Some((
                 $vbx.right - $obj.0,
                 ($vbx.top + $vbx.bottom) / 2.0 - ($obj.1 / 2.0),
-            ),
-            LineUp::CenterCenter => (
+            )),
+            LineUp::CenterCenter => Some((
                 ($vbx.left + $vbx.right) / 2.0 - ($obj.0 / 2.0),
                 ($vbx.top + $vbx.bottom) / 2.0 - ($obj.1 / 2.0),
-            ),
+            )),
+            LineUp::None => None,
         }
     };
 }
@@ -168,6 +171,8 @@ pub enum LineUpGeneral {
     Bottom,
     /// Chacha real smooth.
     Center,
+    /// Reverse, reverse
+    None,
 }
 
 impl std::fmt::Display for LineUpGeneral {
@@ -179,6 +184,7 @@ impl std::fmt::Display for LineUpGeneral {
             LineUpGeneral::Right => write!(f, ">"),
             LineUpGeneral::Center => write!(f, "."),
             LineUpGeneral::Bottom => write!(f, "_"),
+            LineUpGeneral::None => Ok(()),
         }
     }
 }
@@ -204,6 +210,8 @@ pub enum LineUp {
     TopRight,
     /// ^^ or .^ or ^.
     CenterTop,
+    /// None, not specified
+    None,
 }
 
 /// Custom objects are used in grezi to account for varying implementations in drawing, and
@@ -314,6 +322,7 @@ fn fold_lineup(line_up: &(LineUpGeneral, LineUpGeneral)) -> LineUp {
             LineUpGeneral::Bottom => LineUp::CenterBottom,
             LineUpGeneral::Left => LineUp::CenterLeft,
             LineUpGeneral::Right => LineUp::CenterRight,
+            _ => LineUp::None,
         },
         LineUpGeneral::Top => match line_up.1 {
             LineUpGeneral::Center => LineUp::CenterTop,
@@ -321,6 +330,7 @@ fn fold_lineup(line_up: &(LineUpGeneral, LineUpGeneral)) -> LineUp {
             LineUpGeneral::Bottom => LineUp::CenterCenter,
             LineUpGeneral::Left => LineUp::TopLeft,
             LineUpGeneral::Right => LineUp::TopRight,
+            _ => LineUp::None,
         },
         LineUpGeneral::Bottom => match line_up.1 {
             LineUpGeneral::Center => LineUp::CenterBottom,
@@ -328,6 +338,7 @@ fn fold_lineup(line_up: &(LineUpGeneral, LineUpGeneral)) -> LineUp {
             LineUpGeneral::Bottom => LineUp::CenterBottom,
             LineUpGeneral::Left => LineUp::BottomLeft,
             LineUpGeneral::Right => LineUp::BottomRight,
+            _ => LineUp::None,
         },
         LineUpGeneral::Left => match line_up.1 {
             LineUpGeneral::Center => LineUp::CenterLeft,
@@ -335,6 +346,7 @@ fn fold_lineup(line_up: &(LineUpGeneral, LineUpGeneral)) -> LineUp {
             LineUpGeneral::Bottom => LineUp::BottomLeft,
             LineUpGeneral::Left => LineUp::CenterLeft,
             LineUpGeneral::Right => LineUp::CenterCenter,
+            _ => LineUp::None,
         },
         LineUpGeneral::Right => match line_up.1 {
             LineUpGeneral::Center => LineUp::CenterRight,
@@ -342,7 +354,9 @@ fn fold_lineup(line_up: &(LineUpGeneral, LineUpGeneral)) -> LineUp {
             LineUpGeneral::Bottom => LineUp::BottomRight,
             LineUpGeneral::Left => LineUp::CenterCenter,
             LineUpGeneral::Right => LineUp::CenterRight,
+            _ => LineUp::None,
         },
+        LineUpGeneral::None => LineUp::None,
     }
 }
 
@@ -386,12 +400,12 @@ pub fn tokenizer(data: &[u8]) -> (Option<Vec<Token>>, Vec<Simple<u8>>) {
         just(b'^').to(LineUpGeneral::Top),
         just(b'_').to(LineUpGeneral::Bottom),
         just(b'.').to(LineUpGeneral::Center),
+        any().rewind().to(LineUpGeneral::None),
     ));
 
     choice((
         ident_parser
             .then(index_parser)
-            .then_ignore(just(b';'))
             .then(
                 edge_parser
                     .then(edge_parser)
@@ -477,7 +491,7 @@ pub fn file_to_slideshow<K: Object + Clone>(
 ) -> Slideshow<K> {
     let mut layouts: AHashMap<&str, Vec<Rect>> = AHashMap::default();
     let mut unused_objects: AHashMap<&str, SlideObject<K>> = AHashMap::default();
-    let mut objects_in_view: AHashMap<&str, (*const SlideObject<K>, Rect, Vec4)> =
+    let mut objects_in_view: AHashMap<&str, (*const SlideObject<K>, Rect, Vec4, LineUp)> =
         AHashMap::default();
     let mut slides: Vec<Slide<K>> = Vec::new();
     let mut registers: AHashMap<&str, &str> = AHashMap::default();
@@ -552,19 +566,19 @@ pub fn file_to_slideshow<K: Object + Clone>(
                                 continue;
                             }
                         };
-                        let pos_rect_goto_xy = get_pos!(fold_lineup(goto), vbx, bounds);
-                        let pos_rect_from = Vec4::new(
-                            pos_rect_from_xy.0,
-                            pos_rect_from_xy.1,
-                            pos_rect_from_xy.0 + w,
-                            pos_rect_from_xy.1 + h,
-                        );
-                        let pos_rect_goto = Vec4::new(
-                            pos_rect_goto_xy.0,
-                            pos_rect_goto_xy.1,
-                            pos_rect_goto_xy.0 + bounds.0,
-                            pos_rect_goto_xy.1 + bounds.1,
-                        );
+                        let goto_folded = fold_lineup(goto);
+                        let pos_rect_goto_xy = get_pos!(goto_folded, vbx, bounds);
+                        let pos_rect_from;
+                        let pos_rect_goto = if let Some(pos) = pos_rect_goto_xy {
+                            obj.3 = goto_folded;
+                            let p = pos_rect_from_xy.unwrap_unchecked();
+                            pos_rect_from = Vec4::new(p.0, p.1, p.0 + w, p.1 + h);
+                            Vec4::new(pos.0, pos.1, pos.0 + bounds.0, pos.1 + bounds.1)
+                        } else {
+                            let pos = get_pos!(obj.3, vbx, bounds).unwrap_unchecked();
+                            pos_rect_from = obj.2;
+                            Vec4::new(pos.0, pos.1, pos.0 + bounds.0, pos.1 + bounds.1)
+                        };
                         obj.1 = vbx;
                         obj.2 = pos_rect_goto;
                         new_slide.cmds.push(Cmd {
@@ -598,8 +612,27 @@ pub fn file_to_slideshow<K: Object + Clone>(
                                 continue;
                             }
                         };
-                        let pos_rect_from_xy = get_pos!(fold_lineup(from), vbx, bounds);
-                        let pos_rect_goto_xy = get_pos!(fold_lineup(goto), vbx, bounds);
+                        let pos_rect_from_xy = match get_pos!(fold_lineup(from), vbx, bounds) {
+                            Some(b) => b,
+                            None => {
+                                errors.push(Simple::custom(
+                                    span.clone(),
+                                    format!("Object must have a known location to specify None"),
+                                ));
+                                continue;
+                            }
+                        };
+                        let goto_folded = fold_lineup(goto);
+                        let pos_rect_goto_xy = match get_pos!(goto_folded, vbx, bounds) {
+                            Some(b) => b,
+                            None => {
+                                errors.push(Simple::custom(
+                                    span.clone(),
+                                    format!("Object must have a known location to specify None"),
+                                ));
+                                continue;
+                            }
+                        };
                         let pos_rect_from = Vec4::new(
                             pos_rect_from_xy.0,
                             pos_rect_from_xy.1,
@@ -613,20 +646,21 @@ pub fn file_to_slideshow<K: Object + Clone>(
                             pos_rect_goto_xy.1 + bounds.1,
                         );
                         new_slide.cmds.push(Cmd {
+                            iter_to: Parameters {
+                                position: pos_rect_goto.into(),
+                                opacity: opacity_steps,
+                            },
                             obj: obj_slide,
                             iter_from: Parameters {
                                 position: pos_rect_from.into(),
                                 opacity: 0.0,
                             },
-                            iter_to: Parameters {
-                                position: pos_rect_goto.into(),
-                                opacity: opacity_steps,
-                            },
                         });
                         modified_names.push(name);
                         match new_slide.cmds.last() {
                             Some(Cmd { obj, .. }) => {
-                                objects_in_view.insert(name, (obj, vbx, pos_rect_goto));
+                                objects_in_view
+                                    .insert(name, (obj, vbx, pos_rect_goto, goto_folded));
                             }
                             _ => core::hint::unreachable_unchecked(),
                         }

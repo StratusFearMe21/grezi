@@ -54,7 +54,7 @@ fn main() -> Result<(), std::io::Error> {
                     writer.write_all(b"{\n")?;
                     for j in arg {
                         writer.write_fmt(format_args!(
-                            "\t{}: {}[{}];{}{}{}{},\n",
+                            "\t{}: {}[{}]{}{}{}{},\n",
                             j.0 .0 .0,
                             j.0 .0 .1,
                             j.0 .1,

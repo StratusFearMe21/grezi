@@ -374,9 +374,6 @@ fn main() -> anyhow::Result<()> {
                         index += 1;
                         drawing = true;
                         previous_frame_start = frame_start;
-                    } else {
-                        *control_flow = ControlFlow::Exit;
-                        return;
                     }
                 }
                 skulpin::app::MouseButton::Right => {
