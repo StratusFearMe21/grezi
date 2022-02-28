@@ -517,10 +517,50 @@ pub fn file_to_slideshow<K: Object + Clone>(
         match i {
             Token::Slide(cmds, span) => unsafe {
                 let mut bg_parser = registers.get("BG_COLOR").unwrap_unchecked().split(",");
-                bg.x = bg_parser.next().unwrap().trim().parse().unwrap();
-                bg.y = bg_parser.next().unwrap().trim().parse().unwrap();
-                bg.z = bg_parser.next().unwrap().trim().parse().unwrap();
-                bg.w = bg_parser.next().unwrap().trim().parse().unwrap();
+                bg.x = if let Some(bgx) = bg_parser.next() {
+                    if let Ok(b) = bgx.trim().parse() {
+                        b
+                    } else {
+                        errors.push(Simple::custom(span.clone(), "Error parsing BG_COLOR"));
+                        continue;
+                    }
+                } else {
+                    errors.push(Simple::custom(span.clone(), "Error parsing BG_COLOR"));
+                    continue;
+                };
+                bg.y = if let Some(bgx) = bg_parser.next() {
+                    if let Ok(b) = bgx.trim().parse() {
+                        b
+                    } else {
+                        errors.push(Simple::custom(span.clone(), "Error parsing BG_COLOR"));
+                        continue;
+                    }
+                } else {
+                    errors.push(Simple::custom(span.clone(), "Error parsing BG_COLOR"));
+                    continue;
+                };
+                bg.z = if let Some(bgx) = bg_parser.next() {
+                    if let Ok(b) = bgx.trim().parse() {
+                        b
+                    } else {
+                        errors.push(Simple::custom(span.clone(), "Error parsing BG_COLOR"));
+                        continue;
+                    }
+                } else {
+                    errors.push(Simple::custom(span.clone(), "Error parsing BG_COLOR"));
+                    continue;
+                };
+                bg.w = if let Some(bgx) = bg_parser.next() {
+                    if let Ok(b) = bgx.trim().parse() {
+                        b
+                    } else {
+                        errors.push(Simple::custom(span.clone(), "Error parsing BG_COLOR"));
+                        continue;
+                    }
+                } else {
+                    errors.push(Simple::custom(span.clone(), "Error parsing BG_COLOR"));
+                    continue;
+                };
                 let mut new_slide = Slide {
                     cmds: Vec::with_capacity(cmds.len()),
                     step: 0.0,
@@ -761,39 +801,43 @@ mod tests {
 
     #[test]
     fn line_up() {
-        assert_eq!(get_pos!(LineUp::TopLeft, SIZE, (50.0, 20.0)), (0.0, 0.0));
+        assert_eq!(
+            get_pos!(LineUp::TopLeft, SIZE, (50.0, 20.0)),
+            Some((0.0, 0.0))
+        );
         assert_eq!(
             get_pos!(LineUp::TopRight, SIZE, (50.0, 20.0)),
-            (1870.0, 0.0)
+            Some((1870.0, 0.0))
         );
         assert_eq!(
             get_pos!(LineUp::BottomLeft, SIZE, (50.0, 20.0)),
-            (0.0, 1060.0)
+            Some((0.0, 1060.0))
         );
         assert_eq!(
             get_pos!(LineUp::BottomRight, SIZE, (50.0, 20.0)),
-            (1870.0, 1060.0)
+            Some((1870.0, 1060.0))
         );
         assert_eq!(
             get_pos!(LineUp::CenterTop, SIZE, (50.0, 20.0)),
-            (935.0, 0.0)
+            Some((935.0, 0.0))
         );
         assert_eq!(
             get_pos!(LineUp::CenterBottom, SIZE, (50.0, 20.0)),
-            (935.0, 1060.0)
+            Some((935.0, 1060.0))
         );
         assert_eq!(
             get_pos!(LineUp::CenterRight, SIZE, (50.0, 20.0)),
-            (1870.0, 530.0)
+            Some((1870.0, 530.0))
         );
         assert_eq!(
             get_pos!(LineUp::CenterLeft, SIZE, (50.0, 20.0)),
-            (0.0, 530.0)
+            Some((0.0, 530.0))
         );
         assert_eq!(
             get_pos!(LineUp::CenterCenter, SIZE, (50.0, 20.0)),
-            (935.0, 530.0)
+            Some((935.0, 530.0))
         );
+        assert_eq!(get_pos!(LineUp::None, SIZE, (50.0, 20.0)), None);
     }
 
     #[test]

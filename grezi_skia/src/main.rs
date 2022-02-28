@@ -3,6 +3,10 @@ use std::{mem::MaybeUninit, path::PathBuf, time::Instant};
 use anyhow::{bail, Context};
 use ariadne::Label;
 use grezi::{layout::Rect, AHashMap};
+use sdl2::{
+    event::{Event, WindowEvent},
+    keyboard::Keycode,
+};
 use skulpin::{
     rafx::api::RafxExtents2D,
     skia_bindings::{skia_textlayout_ParagraphStyle, skia_textlayout_TextStyle},
@@ -10,11 +14,6 @@ use skulpin::{
         textlayout::{FontCollection, ParagraphBuilder, ParagraphStyle, TextAlign, TextStyle},
         wrapper::PointerWrapper,
         Color4f, Font, FontMgr, FontStyle, Handle, Paint, RefHandle, Typeface,
-    },
-    winit::{
-        event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
-        event_loop::{ControlFlow, EventLoop},
-        window::{Fullscreen, WindowBuilder},
     },
 };
 use structopt::StructOpt;
@@ -276,25 +275,32 @@ fn main() -> anyhow::Result<()> {
     rayon::ThreadPoolBuilder::new().build_global()?;
     let opts = Opts::from_args();
     let map = unsafe { memmap::Mmap::map(&std::fs::File::open(opts.file)?)? };
-    let event_loop = EventLoop::new();
-    let winit_window = WindowBuilder::new()
-        .with_title("Grezi")
-        .with_fullscreen(Some(Fullscreen::Borderless(None)))
-        .build(&event_loop)?;
-    let window_size = winit_window.inner_size();
+    let sdl_ctx = sdl2::init().map_err(|e| anyhow::anyhow!(e))?;
+    let video_ctx = sdl_ctx.video().map_err(|e| anyhow::anyhow!(e))?;
+    let window = video_ctx
+        .window("Grezi", 1920, 1080)
+        .fullscreen()
+        .allow_highdpi()
+        .resizable()
+        .build()?;
+    let window_size = window.vulkan_drawable_size();
     let mut extents = RafxExtents2D {
-        width: window_size.width,
-        height: window_size.height,
+        width: window_size.0,
+        height: window_size.1,
     };
-    let mut s_factor = winit_window.scale_factor();
-    let monitor_size = winit_window.current_monitor().unwrap().size();
+    let visible_range = skulpin::skia_safe::Rect {
+        left: 0.0,
+        right: 1920.0,
+        top: 0.0,
+        bottom: 1080.0,
+    };
     let size = Rect {
         left: 0.0,
         top: 0.0,
         // windowed_context.window().inner_size().width as u16
-        right: monitor_size.width as f32,
+        right: 1920.0,
         // dbg!(windowed_context.window().inner_size().height) as u16
-        bottom: monitor_size.height as f32,
+        bottom: 1080.0,
     };
     unsafe { FONT_CACHE.write(FontCollection::new()) }
         .set_default_font_manager(FontMgr::default(), None);
@@ -305,7 +311,7 @@ fn main() -> anyhow::Result<()> {
             for e in errors {
                 report = report
                     .with_label(Label::new(e.span()).with_message(&e))
-                    .with_message(e.label().context("Unknown Error")?)
+                    .with_message(e.label().unwrap_or("Unknown Error"))
             }
             report.finish().eprint(ariadne::Source::from(unsafe {
                 std::str::from_utf8_unchecked(map.as_ref())
@@ -314,242 +320,233 @@ fn main() -> anyhow::Result<()> {
         }
     };
     let mut skia = skulpin::RendererBuilder::new()
-        .coordinate_system(skulpin::CoordinateSystem::Physical)
+        .coordinate_system(skulpin::CoordinateSystem::VisibleRange(
+            visible_range,
+            skulpin::skia_safe::matrix::ScaleToFit::Center,
+        ))
         .vsync_enabled(!opts.no_vsync)
-        .build(&winit_window, extents)?;
+        .build(&window, extents)?;
     let mut index = 0;
     let mut drawing = true;
     let mut previous_frame_start = Instant::now();
+    #[cfg(debug_assertions)]
+    let fps_font = Font::new(
+        Typeface::new("Helvetica", FontStyle::default()).context("Invalid typeface")?,
+        10.0,
+    );
+    #[cfg(debug_assertions)]
+    let fps_paint = Paint::new(Color4f::new(1.0, 1.0, 1.0, 1.0), None);
+    let mut event_pump = sdl_ctx.event_pump().map_err(|e| anyhow::anyhow!(e))?;
     let mut bg = Color4f::new(0.39, 0.39, 0.39, 1.0);
-    event_loop.run(move |e, _window_target, control_flow| {
+    'running: loop {
         let frame_start = Instant::now();
-        *control_flow = if drawing {
-            ControlFlow::Poll
-        } else {
-            ControlFlow::Wait
-        };
 
-        match e {
-            Event::WindowEvent {
-                event: WindowEvent::CloseRequested,
-                ..
-            } => {
-                *control_flow = ControlFlow::Exit;
-                return;
-            }
-            Event::WindowEvent {
-                event:
-                    WindowEvent::ScaleFactorChanged {
-                        scale_factor,
-                        new_inner_size,
-                    },
-                ..
-            } => {
-                s_factor = scale_factor;
-                extents = RafxExtents2D {
-                    width: new_inner_size.width,
-                    height: new_inner_size.height,
-                };
-            }
-            Event::WindowEvent {
-                event: WindowEvent::Resized(s),
-                ..
-            } => {
-                extents = RafxExtents2D {
-                    width: s.width,
-                    height: s.height,
-                };
-            }
-            Event::WindowEvent {
-                event:
-                    WindowEvent::MouseInput {
-                        state: ElementState::Pressed,
-                        button,
-                        ..
-                    },
-                ..
-            } => match button {
-                skulpin::app::MouseButton::Left => {
-                    if index != slideshow.len() - 1 {
-                        index += 1;
-                        drawing = true;
-                        previous_frame_start = frame_start;
-                    }
+        for event in event_pump.poll_iter() {
+            match event {
+                Event::Quit { .. } => break 'running,
+                Event::Window {
+                    win_event: WindowEvent::Resized(_, _) | WindowEvent::SizeChanged(_, _),
+                    ..
+                } => {
+                    let new_size = window.vulkan_drawable_size();
+                    extents = RafxExtents2D {
+                        width: new_size.0,
+                        height: new_size.1,
+                    };
                 }
-                skulpin::app::MouseButton::Right => {
-                    if index != 0 {
-                        unsafe {
-                            slideshow.get_unchecked_mut(index).step = 0.0;
-                        }
-                        index -= 1;
-                        unsafe {
-                            slideshow.get_unchecked_mut(index).step = 1.0;
-                        }
-                        drawing = true;
-                        previous_frame_start = frame_start;
+                Event::KeyDown { keycode, .. } => match keycode {
+                    Some(Keycode::Q) => {
+                        break 'running;
                     }
-                }
+                    Some(Keycode::Right) => {
+                        if index != slideshow.len() - 1 {
+                            index += 1;
+                            drawing = true;
+                            previous_frame_start = frame_start;
+                        }
+                    }
+                    Some(Keycode::Left) => {
+                        if index != 0 {
+                            unsafe {
+                                slideshow.get_unchecked_mut(index).step = 0.0;
+                            }
+                            index -= 1;
+                            unsafe {
+                                slideshow.get_unchecked_mut(index).step = 1.0;
+                            }
+                            drawing = true;
+                            previous_frame_start = frame_start;
+                        }
+                    }
+                    _ => {}
+                },
+                Event::MouseButtonDown { mouse_btn, .. } => match mouse_btn {
+                    sdl2::mouse::MouseButton::Left => {
+                        if index != slideshow.len() - 1 {
+                            index += 1;
+                            drawing = true;
+                            previous_frame_start = frame_start;
+                        }
+                    }
+                    sdl2::mouse::MouseButton::Right => {
+                        if index != 0 {
+                            unsafe {
+                                slideshow.get_unchecked_mut(index).step = 0.0;
+                            }
+                            index -= 1;
+                            unsafe {
+                                slideshow.get_unchecked_mut(index).step = 1.0;
+                            }
+                            drawing = true;
+                            previous_frame_start = frame_start;
+                        }
+                    }
+                    _ => {}
+                },
+                Event::ControllerButtonDown { button, .. } => match button {
+                    sdl2::controller::Button::A
+                    | sdl2::controller::Button::Start
+                    | sdl2::controller::Button::DPadUp
+                    | sdl2::controller::Button::DPadRight
+                    | sdl2::controller::Button::RightShoulder => {
+                        if index != slideshow.len() - 1 {
+                            index += 1;
+                            drawing = true;
+                            previous_frame_start = frame_start;
+                        }
+                    }
+                    sdl2::controller::Button::B
+                    | sdl2::controller::Button::Back
+                    | sdl2::controller::Button::DPadDown
+                    | sdl2::controller::Button::DPadLeft
+                    | sdl2::controller::Button::LeftShoulder => {
+                        if index != 0 {
+                            unsafe {
+                                slideshow.get_unchecked_mut(index).step = 0.0;
+                            }
+                            index -= 1;
+                            unsafe {
+                                slideshow.get_unchecked_mut(index).step = 1.0;
+                            }
+                            drawing = true;
+                            previous_frame_start = frame_start;
+                        }
+                    }
+                    _ => {}
+                },
                 _ => {}
-            },
-            Event::WindowEvent {
-                event:
-                    WindowEvent::KeyboardInput {
-                        input:
-                            KeyboardInput {
-                                virtual_keycode,
-                                state: ElementState::Pressed,
-                                ..
-                            },
-                        ..
-                    },
-                ..
-            } => match virtual_keycode {
-                Some(VirtualKeyCode::Q) => {
-                    *control_flow = ControlFlow::Exit;
-                    return;
-                }
-                Some(VirtualKeyCode::Right) => {
-                    if index != slideshow.len() - 1 {
-                        index += 1;
-                        drawing = true;
-                        previous_frame_start = frame_start;
-                    }
-                }
-                Some(VirtualKeyCode::Left) => {
-                    if index != 0 {
-                        unsafe {
-                            slideshow.get_unchecked_mut(index).step = 0.0;
-                        }
-                        index -= 1;
-                        unsafe {
-                            slideshow.get_unchecked_mut(index).step = 1.0;
-                        }
-                        drawing = true;
-                        previous_frame_start = frame_start;
-                    }
-                }
-                _ => {}
-            },
-            Event::MainEventsCleared => {
-                if drawing {
-                    let slide = unsafe { slideshow.get_unchecked_mut(index) };
-                    slide.step += (frame_start - previous_frame_start).as_secs_f32() / opts.delay;
-                    if slide.step >= 1.0 {
-                        slide.step = 1.0;
-                        drawing = false;
-                    }
-                    previous_frame_start = frame_start;
-                    let bg_raw = slide.step();
-                    bg = Color4f::new(bg_raw.x, bg_raw.y, bg_raw.z, bg_raw.w);
-                    winit_window.request_redraw();
-                }
             }
-            Event::RedrawRequested(_) => {
-                let slide = unsafe { slideshow.get_unchecked_mut(index) };
-                skia.draw(extents, s_factor, |canvas, _coordinate_system_helper| {
-                    canvas.clear(bg);
-                    #[cfg(debug_assertions)]
-                    canvas.draw_str(
-                        format!(
-                            "{}",
-                            1.0 / (frame_start - previous_frame_start).as_secs_f64()
-                        ),
-                        (10.0, 10.0),
-                        &Font::new(
-                            Typeface::new("Helvetica", FontStyle::default()).unwrap(),
-                            10.0,
-                        ),
-                        &Paint::new(Color4f::new(1.0, 1.0, 1.0, 1.0), None),
-                    );
-                    for cmd in slide.cmds.iter_mut() {
-                        #[cfg(debug_assertions)]
-                        let workrect = skulpin::skia_safe::Rect::new(
-                            cmd.obj.parameters.position.x,
-                            cmd.obj.parameters.position.y,
-                            cmd.obj.parameters.position.z,
-                            cmd.obj.parameters.position.w,
+        }
+
+        if drawing {
+            let slide = unsafe { slideshow.get_unchecked_mut(index) };
+            slide.step += (frame_start - previous_frame_start).as_secs_f32() / opts.delay;
+            if slide.step >= 1.0 {
+                slide.step = 1.0;
+                drawing = false;
+            }
+            previous_frame_start = frame_start;
+            let bg_raw = slide.step();
+            bg = Color4f::new(bg_raw.x, bg_raw.y, bg_raw.z, bg_raw.w);
+        }
+
+        let slide = unsafe { slideshow.get_unchecked_mut(index) };
+        skia.draw(extents, 1.0, |canvas, _coordinate_system_helper| {
+            canvas.clear(bg);
+            #[cfg(debug_assertions)]
+            canvas.draw_str(
+                format!(
+                    "{}",
+                    1.0 / (frame_start - previous_frame_start).as_secs_f64()
+                ),
+                (10.0, 10.0),
+                &fps_font,
+                &fps_paint,
+            );
+            for cmd in slide.cmds.iter_mut() {
+                #[cfg(debug_assertions)]
+                let workrect = skulpin::skia_safe::Rect::new(
+                    cmd.obj.parameters.position.x,
+                    cmd.obj.parameters.position.y,
+                    cmd.obj.parameters.position.z,
+                    cmd.obj.parameters.position.w,
+                );
+                match cmd.obj.obj_type {
+                    ObjectType::Text {
+                        ref mut style,
+                        p_style,
+                        value,
+                        max_width,
+                    } => {
+                        style.set_color(
+                            skulpin::skia_safe::Color4f::new(
+                                1.0,
+                                1.0,
+                                1.0,
+                                cmd.obj.parameters.opacity,
+                            )
+                            .to_color(),
                         );
-                        match cmd.obj.obj_type {
-                            ObjectType::Text {
-                                ref mut style,
-                                p_style,
-                                value,
-                                max_width,
-                            } => {
-                                style.set_color(
-                                    skulpin::skia_safe::Color4f::new(
-                                        1.0,
-                                        1.0,
-                                        1.0,
-                                        cmd.obj.parameters.opacity,
-                                    )
-                                    .to_color(),
-                                );
-                                let mut p_style =
-                                    unsafe { RefHandle::wrap(p_style).unwrap_unchecked() };
-                                p_style.set_text_style(style);
-                                let mut paragraph = ParagraphBuilder::new(&p_style, unsafe {
-                                    FONT_CACHE.assume_init_ref()
-                                });
-                                paragraph
-                                    .add_text(unsafe { std::str::from_utf8_unchecked(&*value) });
-                                let mut built = paragraph.build();
-                                built.layout(max_width);
-                                built.paint(
-                                    canvas,
-                                    (cmd.obj.parameters.position.x, cmd.obj.parameters.position.y),
-                                );
-                                p_style.unwrap();
-                            }
-                            ObjectType::Image { ref img, .. } => {
-                                let paint = skulpin::skia_safe::Paint::new(
-                                    Color4f::new(1.0, 1.0, 1.0, cmd.obj.parameters.opacity),
-                                    None,
-                                );
-                                canvas.draw_image_rect(
-                                    img,
-                                    None,
-                                    skulpin::skia_safe::Rect {
-                                        left: cmd.obj.parameters.position.x,
-                                        top: cmd.obj.parameters.position.y,
-                                        right: cmd.obj.parameters.position.z,
-                                        bottom: cmd.obj.parameters.position.w,
-                                    },
-                                    &paint,
-                                );
-                            }
-                            _ => unimplemented!(),
-                        }
-                        #[cfg(debug_assertions)]
-                        {
-                            let paint = skulpin::skia_safe::Paint::new(
-                                skulpin::skia_safe::Color4f::new(1.0, 1.0, 0.5, 0.5),
-                                None,
-                            );
-                            canvas.draw_rect(workrect, &paint);
-                            canvas.draw_circle((workrect.left, workrect.top), 20.0, &paint);
-                        }
+                        let mut p_style = unsafe { RefHandle::wrap(p_style).unwrap_unchecked() };
+                        p_style.set_text_style(style);
+                        let mut paragraph = ParagraphBuilder::new(&p_style, unsafe {
+                            FONT_CACHE.assume_init_ref()
+                        });
+                        paragraph.add_text(unsafe { std::str::from_utf8_unchecked(&*value) });
+                        let mut built = paragraph.build();
+                        built.layout(max_width);
+                        built.paint(
+                            canvas,
+                            (cmd.obj.parameters.position.x, cmd.obj.parameters.position.y),
+                        );
+                        p_style.unwrap();
                     }
-                    #[cfg(debug_assertions)]
-                    {
+                    ObjectType::Image { ref img, .. } => {
                         let paint = skulpin::skia_safe::Paint::new(
-                            skulpin::skia_safe::Color4f::new(1.0, 1.0, 0.5, 0.5),
+                            Color4f::new(1.0, 1.0, 1.0, cmd.obj.parameters.opacity),
                             None,
                         );
-                        canvas.draw_rect(
-                            skulpin::skia_safe::Rect::from_xywh(955.0, 0.0, 10.0, 1080.0),
-                            &paint,
-                        );
-                        canvas.draw_rect(
-                            skulpin::skia_safe::Rect::from_xywh(0.0, 535.0, 1920.0, 10.0),
+                        canvas.draw_image_rect(
+                            img,
+                            None,
+                            skulpin::skia_safe::Rect {
+                                left: cmd.obj.parameters.position.x,
+                                top: cmd.obj.parameters.position.y,
+                                right: cmd.obj.parameters.position.z,
+                                bottom: cmd.obj.parameters.position.w,
+                            },
                             &paint,
                         );
                     }
-                })
-                .unwrap();
-                std::thread::yield_now();
+                    _ => unimplemented!(),
+                }
+                #[cfg(debug_assertions)]
+                {
+                    let paint = skulpin::skia_safe::Paint::new(
+                        skulpin::skia_safe::Color4f::new(1.0, 1.0, 0.5, 0.5),
+                        None,
+                    );
+                    canvas.draw_rect(workrect, &paint);
+                    canvas.draw_circle((workrect.left, workrect.top), 20.0, &paint);
+                }
             }
-            _ => (),
-        }
-    });
+            #[cfg(debug_assertions)]
+            {
+                let paint = skulpin::skia_safe::Paint::new(
+                    skulpin::skia_safe::Color4f::new(1.0, 1.0, 0.5, 0.5),
+                    None,
+                );
+                canvas.draw_rect(
+                    skulpin::skia_safe::Rect::from_xywh(955.0, 0.0, 10.0, 1080.0),
+                    &paint,
+                );
+                canvas.draw_rect(
+                    skulpin::skia_safe::Rect::from_xywh(0.0, 535.0, 1920.0, 10.0),
+                    &paint,
+                );
+            }
+        })?;
+        std::thread::yield_now();
+    }
+    Ok(())
 }
