@@ -276,6 +276,27 @@ fn main() -> anyhow::Result<()> {
     let opts = Opts::from_args();
     let map = unsafe { memmap::Mmap::map(&std::fs::File::open(opts.file)?)? };
     let sdl_ctx = sdl2::init().map_err(|e| anyhow::anyhow!(e))?;
+    let game_controller_subsystem = sdl_ctx.game_controller().map_err(|e| anyhow::anyhow!(e))?;
+
+    let available = game_controller_subsystem
+        .num_joysticks()
+        .map_err(|e| anyhow::anyhow!("can't enumerate joysticks: {}", e))?;
+
+    // Iterate over all available joysticks and look for game controllers.
+    let mut controllers = [None, None, None, None, None, None, None, None];
+    (0..available).for_each(|id| {
+        if game_controller_subsystem.is_game_controller(id) {
+            match game_controller_subsystem.open(id) {
+                Ok(c) => {
+                    // We managed to find and open a game controller,
+                    // exit the loop
+                    controllers[id as usize] = Some(c);
+                }
+                Err(_) => {}
+            }
+        }
+    });
+    let mut event_pump = sdl_ctx.event_pump().map_err(|e| anyhow::anyhow!(e))?;
     let video_ctx = sdl_ctx.video().map_err(|e| anyhow::anyhow!(e))?;
     let window = video_ctx
         .window("Grezi", 1920, 1080)
@@ -336,10 +357,10 @@ fn main() -> anyhow::Result<()> {
     );
     #[cfg(debug_assertions)]
     let fps_paint = Paint::new(Color4f::new(1.0, 1.0, 1.0, 1.0), None);
-    let mut event_pump = sdl_ctx.event_pump().map_err(|e| anyhow::anyhow!(e))?;
     let mut bg = Color4f::new(0.39, 0.39, 0.39, 1.0);
     'running: loop {
         let frame_start = Instant::now();
+        assert!(event_pump.is_event_enabled(sdl2::event::EventType::ControllerButtonDown));
 
         for event in event_pump.poll_iter() {
             match event {
@@ -403,12 +424,34 @@ fn main() -> anyhow::Result<()> {
                     }
                     _ => {}
                 },
+                Event::ControllerDeviceAdded { which, .. } => {
+                    controllers[which as usize] =
+                        if game_controller_subsystem.is_game_controller(which) {
+                            match game_controller_subsystem.open(which) {
+                                Ok(c) => {
+                                    // We managed to find and open a game controller,
+                                    // exit the loop
+                                    Some(c)
+                                }
+                                Err(_) => None,
+                            }
+                        } else {
+                            None
+                        };
+                }
+                Event::ControllerDeviceRemoved { which, .. } => {
+                    controllers[which as usize] = None;
+                }
                 Event::ControllerButtonDown { button, .. } => match button {
+                    sdl2::controller::Button::Guide => {
+                        break 'running;
+                    }
                     sdl2::controller::Button::A
                     | sdl2::controller::Button::Start
                     | sdl2::controller::Button::DPadUp
                     | sdl2::controller::Button::DPadRight
-                    | sdl2::controller::Button::RightShoulder => {
+                    | sdl2::controller::Button::RightShoulder
+                    | sdl2::controller::Button::RightStick => {
                         if index != slideshow.len() - 1 {
                             index += 1;
                             drawing = true;
@@ -419,7 +462,8 @@ fn main() -> anyhow::Result<()> {
                     | sdl2::controller::Button::Back
                     | sdl2::controller::Button::DPadDown
                     | sdl2::controller::Button::DPadLeft
-                    | sdl2::controller::Button::LeftShoulder => {
+                    | sdl2::controller::Button::LeftShoulder
+                    | sdl2::controller::Button::LeftStick => {
                         if index != 0 {
                             unsafe {
                                 slideshow.get_unchecked_mut(index).step = 0.0;

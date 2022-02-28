@@ -8,11 +8,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.55"
 memmap = "0.7.0"
-skulpin = { version = "0.14.1", features = [
-  "skia-textlayout",
-  "winit-app",
-  "winit-latest",
-] }
+skulpin = { version = "0.14.1", features = ["skia-textlayout"] }
 structopt = "0.3.26"
 glam = "0.20.2"
 ariadne = "0.1.3"
