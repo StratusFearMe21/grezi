@@ -379,26 +379,49 @@ fn main() -> anyhow::Result<()> {
                     Some(Keycode::Q) => {
                         break 'running;
                     }
-                    Some(Keycode::Right) => {
-                        if index != slideshow.len() - 1 {
-                            index += 1;
-                            drawing = true;
-                            previous_frame_start = frame_start;
-                        }
-                    }
-                    Some(Keycode::Left) => {
-                        if index != 0 {
-                            unsafe {
-                                slideshow.get_unchecked_mut(index).step = 0.0;
+                    Some(Keycode::Right)
+                        // These are bindings for the 8bitdo Zero 2
+                        // No, they don't make sense
+                        //
+                        // Right Shoulder button
+                        | Some(Keycode::M)
+                        // Right D-Pad
+                        | Some(Keycode::F)
+                        // Up D-Pad
+                        | Some(Keycode::C)
+                        // Start button
+                        | Some(Keycode::O)
+                        // "A" Button
+                        | Some(Keycode::G) => {
+                            if index != slideshow.len() - 1 {
+                                index += 1;
+                                drawing = true;
+                                previous_frame_start = frame_start;
                             }
-                            index -= 1;
-                            unsafe {
-                                slideshow.get_unchecked_mut(index).step = 1.0;
-                            }
-                            drawing = true;
-                            previous_frame_start = frame_start;
                         }
-                    }
+                    Some(Keycode::Left)
+                        // Left Shoulder button
+                        | Some(Keycode::K)
+                        // Left D-Pad
+                        | Some(Keycode::E)
+                        // Down D-Pad
+                        | Some(Keycode::D)
+                        // Select button
+                        | Some(Keycode::N)
+                        // "B" Button
+                        | Some(Keycode::J) => {
+                            if index != 0 {
+                                unsafe {
+                                    slideshow.get_unchecked_mut(index).step = 0.0;
+                                }
+                                index -= 1;
+                                unsafe {
+                                    slideshow.get_unchecked_mut(index).step = 1.0;
+                                }
+                                drawing = true;
+                                previous_frame_start = frame_start;
+                            }
+                        }
                     _ => {}
                 },
                 Event::MouseButtonDown { mouse_btn, .. } => match mouse_btn {
@@ -424,7 +447,6 @@ fn main() -> anyhow::Result<()> {
                     }
                     _ => {}
                 },
-                /*
                 Event::ControllerDeviceAdded { which, .. } => {
                     if controllers.get(which as usize).is_none() {
                         controllers[which as usize] =
@@ -445,7 +467,6 @@ fn main() -> anyhow::Result<()> {
                 Event::ControllerDeviceRemoved { which, .. } => {
                     controllers[which as usize] = None;
                 }
-                */
                 Event::ControllerButtonDown { button, .. } => match button {
                     sdl2::controller::Button::Guide => {
                         break 'running;
