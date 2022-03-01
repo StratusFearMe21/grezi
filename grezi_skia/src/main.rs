@@ -24,9 +24,6 @@ struct Opts {
     #[structopt(short, long, default_value = "0.5")]
     /// The delay between slides in seconds
     delay: f32,
-    #[structopt(long)]
-    /// Deactivate VSYNC
-    no_vsync: bool,
     /// The file for Grezi to open
     file: PathBuf,
 }
@@ -345,7 +342,9 @@ fn main() -> anyhow::Result<()> {
             visible_range,
             skulpin::skia_safe::matrix::ScaleToFit::Center,
         ))
-        .vsync_enabled(!opts.no_vsync)
+        // I am an actual god, FPS is so high that turning this off produces inf FPS.
+        // Thus crashing Vulkan!
+        .vsync_enabled(true)
         .build(&window, extents)?;
     let mut index = 0;
     let mut drawing = true;
