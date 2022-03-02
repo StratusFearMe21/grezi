@@ -272,6 +272,32 @@ fn main() -> anyhow::Result<()> {
     rayon::ThreadPoolBuilder::new().build_global()?;
     let opts = Opts::from_args();
     let map = unsafe { memmap::Mmap::map(&std::fs::File::open(opts.file)?)? };
+    let size = Rect {
+        left: 0.0,
+        top: 0.0,
+        // windowed_context.window().inner_size().width as u16
+        right: 1920.0,
+        // dbg!(windowed_context.window().inner_size().height) as u16
+        bottom: 1080.0,
+    };
+    unsafe { FONT_CACHE.write(FontCollection::new()) }
+        .set_default_font_manager(FontMgr::default(), None);
+    let mut slideshow = match grezi::file_to_slideshow(&map, size, 1.0) {
+        Ok(slides) => slides,
+        Err(errors) => {
+            let mut report = ariadne::Report::build(ariadne::ReportKind::Error, (), 0);
+            for e in errors {
+                report = report
+                    .with_label(Label::new(e.span()).with_message(&e))
+                    .with_message(e.label().unwrap_or("Unknown Error"))
+            }
+            report.finish().eprint(ariadne::Source::from(unsafe {
+                std::str::from_utf8_unchecked(map.as_ref())
+            }))?;
+            bail!("Failed to compile presentation")
+        }
+    };
+
     let sdl_ctx = sdl2::init().map_err(|e| anyhow::anyhow!(e))?;
     let game_controller_subsystem = sdl_ctx.game_controller().map_err(|e| anyhow::anyhow!(e))?;
 
@@ -311,31 +337,6 @@ fn main() -> anyhow::Result<()> {
         right: 1920.0,
         top: 0.0,
         bottom: 1080.0,
-    };
-    let size = Rect {
-        left: 0.0,
-        top: 0.0,
-        // windowed_context.window().inner_size().width as u16
-        right: 1920.0,
-        // dbg!(windowed_context.window().inner_size().height) as u16
-        bottom: 1080.0,
-    };
-    unsafe { FONT_CACHE.write(FontCollection::new()) }
-        .set_default_font_manager(FontMgr::default(), None);
-    let mut slideshow = match grezi::file_to_slideshow(&map, size, 1.0) {
-        Ok(slides) => slides,
-        Err(errors) => {
-            let mut report = ariadne::Report::build(ariadne::ReportKind::Error, (), 0);
-            for e in errors {
-                report = report
-                    .with_label(Label::new(e.span()).with_message(&e))
-                    .with_message(e.label().unwrap_or("Unknown Error"))
-            }
-            report.finish().eprint(ariadne::Source::from(unsafe {
-                std::str::from_utf8_unchecked(map.as_ref())
-            }))?;
-            bail!("Failed to compile presentation")
-        }
     };
     let mut skia = skulpin::RendererBuilder::new()
         .coordinate_system(skulpin::CoordinateSystem::VisibleRange(
