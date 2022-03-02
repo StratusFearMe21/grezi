@@ -448,20 +448,22 @@ fn main() -> anyhow::Result<()> {
                     _ => {}
                 },
                 Event::ControllerDeviceAdded { which, .. } => {
-                    if controllers.get(which as usize).is_none() {
-                        controllers[which as usize] =
-                            if game_controller_subsystem.is_game_controller(which) {
-                                match game_controller_subsystem.open(which) {
-                                    Ok(c) => {
-                                        // We managed to find and open a game controller,
-                                        // exit the loop
-                                        Some(c)
+                    if let Some(None) = controllers.get(which as usize) {
+                        unsafe {
+                            *controllers.get_unchecked_mut(which as usize) =
+                                if game_controller_subsystem.is_game_controller(which) {
+                                    match game_controller_subsystem.open(which) {
+                                        Ok(c) => {
+                                            // We managed to find and open a game controller,
+                                            // exit the loop
+                                            Some(c)
+                                        }
+                                        Err(_) => None,
                                     }
-                                    Err(_) => None,
-                                }
-                            } else {
-                                None
-                            };
+                                } else {
+                                    None
+                                };
+                        }
                     }
                 }
                 Event::ControllerDeviceRemoved { which, .. } => {
