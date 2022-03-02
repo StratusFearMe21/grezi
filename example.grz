@@ -97,11 +97,11 @@ LetsLearn: Header(
 
 Viewbox: Paragraph(
 	font_family: "Fira Code",
+	alignment: "left",
 	value: "VerticalViewbox: Size[0] ^
     1:2,
     1:2
 ];",
-	alignment: "left",
 );
 
 SizeThirds: HorizontalViewbox[0] ^
@@ -166,9 +166,9 @@ ViewboxNameDescription: Paragraph(
 };
 
 ViewboxSplit: Paragraph(
-	font_family: "Fira Code",
-	value: "VerticalViewbox: Size",
 	alignment: "left",
+	value: "VerticalViewbox: Size",
+	font_family: "Fira Code",
 );
 
 ViewboxSplitDescription: Paragraph(
@@ -183,8 +183,8 @@ ViewboxSplitDescription: Paragraph(
 
 ViewboxIndex: Paragraph(
 	alignment: "left",
-	value: "VerticalViewbox: Size[0]",
 	font_family: "Fira Code",
+	value: "VerticalViewbox: Size[0]",
 );
 
 ViewboxIndexDescription: Paragraph(
@@ -199,8 +199,8 @@ ViewboxIndexDescription: Paragraph(
 
 ViewboxDirection: Paragraph(
 	font_family: "Fira Code",
-	alignment: "left",
 	value: "VerticalViewbox: Size[0] ^",
+	alignment: "left",
 );
 
 ViewboxDirectionDescription: Paragraph(
@@ -217,8 +217,8 @@ ViewboxConstraints: Paragraph(
 	value: "VerticalViewbox: Size[0] ^
     1:2,
     1:2",
-	font_family: "Fira Code",
 	alignment: "left",
+	font_family: "Fira Code",
 );
 
 ViewboxConstraintsDescription: Paragraph(
@@ -237,13 +237,13 @@ ValidConstraints: Paragraph(
 );
 
 ValidConstraintsDescription: Paragraph(
-	alignment: "left",
 	value: "Valid constraints include:
 - Ratios
 - Percentages
 - Maximum length
 - Minimum length
 - Fixed length",
+	alignment: "left",
 );
 
 {
@@ -308,22 +308,22 @@ ObjectsHowToFour: Paragraph(
 );
 
 ObjectsHowToOneExample: Paragraph(
+	font_family: "Fira Code",
 	value: "ExampleObject",
 	alignment: "left",
-	font_family: "Fira Code",
 );
 
 ObjectsHowToTwoExample: Paragraph(
-	font_family: "Fira Code",
 	alignment: "left",
+	font_family: "Fira Code",
 	value: "ExampleObject: Paragraph",
 );
 
 ObjectsHowToThreeExample: Paragraph(
-	font_family: "Fira Code",
-	alignment: "left",
 	value: "ExampleObject: Paragraph
     (value: 'Very epic gamer cool')",
+	font_family: "Fira Code",
+	alignment: "left",
 );
 
 ObjectsHowToFourExample: Paragraph(
@@ -440,36 +440,36 @@ SlidesEight: Paragraph(
 );
 
 SlidesOneExample: Paragraph(
-	alignment: "left",
 	value: "{",
+	alignment: "left",
 	font_family: "Fira Code",
 );
 
 SlidesTwoExample: Paragraph(
+	alignment: "left",
 	value: "{
     TitleObject",
 	font_family: "Fira Code",
-	alignment: "left",
 );
 
 SlidesThreeExample: Paragraph(
 	value: "{
     TitleObject: VerticalViewbox[0]",
-	alignment: "left",
 	font_family: "Fira Code",
+	alignment: "left",
 );
 
 SlidesFourExample: Paragraph(
-	alignment: "left",
 	value: "{
-    TitleObject: VerticalViewbox[0];^^..",
+    TitleObject: VerticalViewbox[0]^^..",
 	font_family: "Fira Code",
+	alignment: "left",
 );
 
 SlidesFiveExample: Paragraph(
-	font_family: "Fira Code",
-	value: "^^..",
 	alignment: "left",
+	value: "^^..",
+	font_family: "Fira Code",
 );
 
 SlidesSixExample: Paragraph(
@@ -484,20 +484,20 @@ SlidesSixExample: Paragraph(
 );
 
 SlidesSevenExample: Paragraph(
-	font_family: "Fira Code",
 	alignment: "left",
 	value: "{
-    TitleObject: VerticalViewbox[0];^^..,
-    Subtitle: VerticalViewbox[1];__..",
+    TitleObject: VerticalViewbox[0]^^..,
+    Subtitle: VerticalViewbox[1]__..",
+	font_family: "Fira Code",
 );
 
 SlidesEightExample: Paragraph(
-	font_family: "Fira Code",
 	alignment: "left",
 	value: "{
-    TitleObject: VerticalViewbox[0];^^..,
-    Subtitle: VerticalViewbox[1];__..
+    TitleObject: VerticalViewbox[0]^^..,
+    Subtitle: VerticalViewbox[1]__..
 };",
+	font_family: "Fira Code",
 );
 
 {
@@ -564,5 +564,3 @@ YourAMaster: Paragraph(
 	Congrats: VerticalViewbox[0]....,
 	YourAMaster: VerticalViewbox[1]__..,
 };
-
-
