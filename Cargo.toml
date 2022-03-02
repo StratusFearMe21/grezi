@@ -5,3 +5,4 @@ members = ["lib_grezi", "grezi_skia", "grzfmt"]
 lto = "fat"
 codegen-units = 1
 panic = "abort"
+strip = true

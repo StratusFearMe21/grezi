@@ -109,6 +109,9 @@ fn main() -> Result<(), std::io::Error> {
                         ))?;
                     }
                 }
+                Token::Command(((name, field), value), _) => {
+                    writer.write_fmt(format_args!("{}.{}: \"{}\";", name, field, value))?;
+                }
             }
             writer.write_all(b"\n\n")?;
         }

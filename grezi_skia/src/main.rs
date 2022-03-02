@@ -1,4 +1,4 @@
-use std::{mem::MaybeUninit, path::PathBuf, time::Instant};
+use std::{borrow::Cow, mem::MaybeUninit, path::PathBuf, time::Instant};
 
 use anyhow::{bail, Context};
 use ariadne::Label;
@@ -51,11 +51,11 @@ impl grezi::Object for ObjectType {
 
     fn construct(
         _: &str,
-        type_: &str,
-        values: &mut AHashMap<String, String>,
-        registers: &AHashMap<&str, &str>,
+        type_: String,
+        mut values: AHashMap<String, String>,
+        registers: &AHashMap<Cow<str>, Cow<str>>,
     ) -> anyhow::Result<Self> {
-        match type_ {
+        match type_.as_str() {
             "Paragraph" | "paragraph" | "PP" | "pp" | "P" | "p" => {
                 let value = match values.remove("value") {
                     Some(val) => val,
@@ -467,7 +467,9 @@ fn main() -> anyhow::Result<()> {
                     }
                 }
                 Event::ControllerDeviceRemoved { which, .. } => {
-                    controllers[which as usize] = None;
+                    if let Some(c) = controllers.get_mut(which as usize) {
+                        c.take();
+                    }
                 }
                 Event::ControllerButtonDown { button, .. } => match button {
                     sdl2::controller::Button::Guide => {

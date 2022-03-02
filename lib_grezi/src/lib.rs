@@ -71,7 +71,7 @@
 /// Access to the raw constraint solver and associated types modified from the `tui` crate.
 pub mod layout;
 
-use std::ops::Range;
+use std::{borrow::Cow, ops::Range};
 
 use ahash::RandomState;
 /// A type alias for a [`std::collections::HashMap`] which uses [`ahash`] as it's hasher.
@@ -156,6 +156,8 @@ pub enum Token {
     ),
     /// Register
     Register((String, String)),
+    /// Command
+    Command(((String, String), String), Range<usize>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -237,9 +239,9 @@ pub trait Object: std::fmt::Debug + Sized {
     /// Constructs an object based on it's name, type, and associated keys/values.
     fn construct(
         name: &str,
-        type_: &str,
-        values: &mut AHashMap<String, String>,
-        registers: &AHashMap<&str, &str>,
+        type_: String,
+        values: AHashMap<String, String>,
+        registers: &AHashMap<Cow<str>, Cow<str>>,
     ) -> Result<Self, Self::Error>;
 }
 
@@ -473,6 +475,14 @@ pub fn tokenizer(data: &[u8]) -> (Option<Vec<Token>>, Vec<Simple<u8>>) {
             )
             .map_with_span(Token::Obj),
         ident_parser.map(Token::Register),
+        str_parser
+            .or(text_ident)
+            .then_ignore(just(b'.'))
+            .then(str_parser.or(text_ident).padded())
+            .then_ignore(just(b':'))
+            .padded()
+            .then(str_parser.or(text_ident).padded())
+            .map_with_span(Token::Command),
     ))
     .padded()
     .separated_by(just(b';'))
@@ -489,31 +499,35 @@ pub fn file_to_slideshow<K: Object + Clone>(
     size: Rect,
     opacity_steps: f32,
 ) -> Slideshow<K> {
-    let mut layouts: AHashMap<&str, Vec<Rect>> = AHashMap::default();
-    let mut unused_objects: AHashMap<&str, SlideObject<K>> = AHashMap::default();
-    let mut objects_in_view: AHashMap<&str, (*const SlideObject<K>, Rect, Vec4, LineUp)> =
+    let mut layouts: AHashMap<String, Vec<Rect>> = AHashMap::default();
+    let mut unused_objects: AHashMap<String, SlideObject<K>> = AHashMap::default();
+    let mut objects_in_view: AHashMap<String, (*const SlideObject<K>, Rect, Vec4, LineUp)> =
         AHashMap::default();
     let mut slides: Vec<Slide<K>> = Vec::new();
-    let mut registers: AHashMap<&str, &str> = AHashMap::default();
-    registers.insert("FONT_SIZE", "48");
-    registers.insert("HEADER_FONT_SIZE_ADD", "24");
-    registers.insert("FONT_FAMILY", "Helvetica");
-    registers.insert("HEADER_FONT_FAMILY", "Helvetica");
-    registers.insert("VIEWBOX_MARGIN", "25");
-    registers.insert("BG_COLOR", "0.39, 0.39, 0.39, 1.0");
+    let mut registers: AHashMap<Cow<str>, Cow<str>> = AHashMap::default();
+    registers.insert(Cow::Borrowed("FONT_SIZE"), Cow::Borrowed("48"));
+    registers.insert(Cow::Borrowed("HEADER_FONT_SIZE_ADD"), Cow::Borrowed("24"));
+    registers.insert(Cow::Borrowed("FONT_FAMILY"), Cow::Borrowed("Helvetica"));
+    registers.insert(
+        Cow::Borrowed("HEADER_FONT_FAMILY"),
+        Cow::Borrowed("Helvetica"),
+    );
+    registers.insert(Cow::Borrowed("VIEWBOX_MARGIN"), Cow::Borrowed("25"));
+    registers.insert(
+        Cow::Borrowed("BG_COLOR"),
+        Cow::Borrowed("0.39, 0.39, 0.39, 1.0"),
+    );
     let mut errors = Vec::new();
 
-    let tokens = match tokenizer(file) {
+    let mut bg = const_vec4!([0.39, 0.39, 0.39, 1.0]);
+    let mut last_bg = bg;
+    for i in match tokenizer(file) {
         (Some(tokens), e) => {
             errors.extend(e);
             tokens
         }
         (None, e) => return Err(e),
-    };
-
-    let mut bg = const_vec4!([0.39, 0.39, 0.39, 1.0]);
-    let mut last_bg = bg;
-    for i in tokens.iter() {
+    } {
         match i {
             Token::Slide(cmds, span) => unsafe {
                 let mut bg_parser = registers.get("BG_COLOR").unwrap_unchecked().split(",");
@@ -568,10 +582,10 @@ pub fn file_to_slideshow<K: Object + Clone>(
                     bg_to: bg,
                 };
                 last_bg = bg;
-                let mut modified_names: Vec<&str> = Vec::with_capacity(cmds.len());
-                for (((name, split), split_index), (from, goto)) in cmds.iter() {
+                let mut modified_names: Vec<String> = Vec::with_capacity(cmds.len());
+                for (((name, split), split_index), (from, goto)) in cmds {
                     let vbx = if let Some(rect) = layouts.get(split.as_str()) {
-                        rect[*split_index]
+                        rect[split_index]
                     } else if split == "Size" {
                         let vbx_margin = registers.get("VIEWBOX_MARGIN").unwrap_unchecked();
                         let margin = if let Ok(num) = vbx_margin.parse::<f32>() {
@@ -594,11 +608,11 @@ pub fn file_to_slideshow<K: Object + Clone>(
                         ));
                         continue;
                     };
-                    if let Some(obj) = objects_in_view.get_mut(name.as_str()) {
+                    if let Some(obj) = objects_in_view.get_mut(&name) {
                         let mut obj_slide = (*(obj.0)).clone();
                         let w = obj.2.z - obj.2.x;
                         let h = obj.2.w - obj.2.y;
-                        let pos_rect_from_xy = get_pos!(fold_lineup(from), obj.1, (w, h));
+                        let pos_rect_from_xy = get_pos!(fold_lineup(&from), obj.1, (w, h));
                         let bounds = match obj_slide.obj_type.bounds(vbx.width(), vbx.height()) {
                             Ok(b) => b,
                             Err(e) => {
@@ -606,7 +620,7 @@ pub fn file_to_slideshow<K: Object + Clone>(
                                 continue;
                             }
                         };
-                        let goto_folded = fold_lineup(goto);
+                        let goto_folded = fold_lineup(&goto);
                         let pos_rect_goto_xy = get_pos!(goto_folded, vbx, bounds);
                         let pos_rect_from;
                         let pos_rect_goto = if let Some(pos) = pos_rect_goto_xy {
@@ -652,7 +666,7 @@ pub fn file_to_slideshow<K: Object + Clone>(
                                 continue;
                             }
                         };
-                        let pos_rect_from_xy = match get_pos!(fold_lineup(from), vbx, bounds) {
+                        let pos_rect_from_xy = match get_pos!(fold_lineup(&from), vbx, bounds) {
                             Some(b) => b,
                             None => {
                                 errors.push(Simple::custom(
@@ -662,7 +676,7 @@ pub fn file_to_slideshow<K: Object + Clone>(
                                 continue;
                             }
                         };
-                        let goto_folded = fold_lineup(goto);
+                        let goto_folded = fold_lineup(&goto);
                         let pos_rect_goto_xy = match get_pos!(goto_folded, vbx, bounds) {
                             Some(b) => b,
                             None => {
@@ -696,14 +710,14 @@ pub fn file_to_slideshow<K: Object + Clone>(
                                 opacity: 0.0,
                             },
                         });
-                        modified_names.push(name);
                         match new_slide.cmds.last() {
                             Some(Cmd { obj, .. }) => {
                                 objects_in_view
-                                    .insert(name, (obj, vbx, pos_rect_goto, goto_folded));
+                                    .insert(name.clone(), (obj, vbx, pos_rect_goto, goto_folded));
                             }
                             _ => core::hint::unreachable_unchecked(),
                         }
+                        modified_names.push(name);
                     }
                 }
                 objects_in_view.retain(|k, _| modified_names.contains(k));
@@ -721,10 +735,10 @@ pub fn file_to_slideshow<K: Object + Clone>(
                     continue;
                 };
                 let mut rects = Layout::default()
-                    .direction(direction)
-                    .constraints(constraints)
+                    .direction(&direction)
+                    .constraints(&constraints)
                     .split(if let Some(rect) = layouts.get(split.as_str()) {
-                        rect[*split_index]
+                        rect[split_index]
                     } else if split == "Size" {
                         let vbx_margin =
                             unsafe { registers.get("VIEWBOX_MARGIN").unwrap_unchecked() };
@@ -757,8 +771,7 @@ pub fn file_to_slideshow<K: Object + Clone>(
                 layouts.insert(name, rects);
             }
             Token::Obj(((name, type_), values), span) => {
-                let vals_mut = values as *const _ as *mut AHashMap<String, String>;
-                let obj = match K::construct(name, type_, unsafe { &mut *vals_mut }, &registers) {
+                let obj = match K::construct(&name, type_, values, &registers) {
                     Ok(o) => o,
                     Err(e) => {
                         errors.push(Simple::custom(span.clone(), e));
@@ -777,8 +790,23 @@ pub fn file_to_slideshow<K: Object + Clone>(
                 );
             }
             Token::Register((name, value)) => {
-                registers.insert(name, value);
+                registers.insert(Cow::Owned(name), Cow::Owned(value));
             }
+            Token::Command(((_, _), _), _) => {} /*
+                                                 Token::Command(((name, field), value), span) => {
+                                                     let obj = match unused_objects.get_mut(name.as_str()) {
+                                                         Some(obj) => obj,
+                                                         None => {
+                                                             errors.push(Simple::custom(
+                                                                 span.clone(),
+                                                                 format!("Could not find object {name}"),
+                                                             ));
+                                                             continue;
+                                                         }
+                                                     };
+                                                     obj.obj_type.change_field(field, value);
+                                                 }
+                                                 */
         }
     }
     if !errors.is_empty() {
