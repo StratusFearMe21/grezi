@@ -12,6 +12,10 @@ I wanted to create something that follows the same paradigm, but for presentatio
 
 Grezi interprets `.grz` files and plays them in fullscreen. The `grz` format was designed to be elegant and elicit fast parsing with minimal RAM usage.
 
+## Opening presentations
+
+On windows, you can open presentations by dragging the `.grz` file onto the `grezi_skia.exe` file. On other operating systems, grezi takes presentations as a command line argument.
+
 ## Features of Grezi
 
 *   Write presentations as text files
