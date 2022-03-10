@@ -52,7 +52,7 @@ fn main() -> Result<(), std::io::Error> {
                 }
                 Token::Slide(arg, _) => {
                     writer.write_all(b"{\n")?;
-                    for j in arg {
+                    for j in arg.0 {
                         writer.write_fmt(format_args!(
                             "\t{}: {}[{}]{}{}{}{},\n",
                             j.0 .0 .0,
@@ -64,7 +64,16 @@ fn main() -> Result<(), std::io::Error> {
                             j.1 .1 .1
                         ))?;
                     }
-                    writer.write_all(b"};")?;
+
+                    if arg.1.is_empty() {
+                        writer.write_all(b"}[];")?;
+                    } else {
+                        writer.write_all(b"}[\n")?;
+                        for j in arg.1 {
+                            writer.write_fmt(format_args!("\t{}({})\n", j.0, j.1))?;
+                        }
+                        writer.write_all(b"];")?;
+                    }
                 }
                 Token::Viewbox(((((name, split), index), direction), constraints), _) => {
                     writer.write_fmt(format_args!(

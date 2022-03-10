@@ -121,15 +121,18 @@ type Viewbox = (
     Vec<Constraint>,
 );
 
-type SlideType = Vec<(
-    ((String, String), usize),
-    (
-        (LineUpGeneral, LineUpGeneral),
-        (LineUpGeneral, LineUpGeneral),
-    ),
-)>;
+type SlideType = (
+    Vec<(
+        ((String, String), usize),
+        (
+            (LineUpGeneral, LineUpGeneral),
+            (LineUpGeneral, LineUpGeneral),
+        ),
+    )>,
+    Vec<(String, String)>,
+);
 
-type Slideshow<K> = Result<Vec<Slide<K>>, Vec<Simple<u8>>>;
+type Slideshow<K, F> = Result<Vec<Slide<K, F>>, Vec<Simple<u8>>>;
 
 //--> Enums
 
@@ -245,6 +248,12 @@ pub trait Object: std::fmt::Debug + Sized {
     ) -> Result<Self, Self::Error>;
 }
 
+pub trait Functions: Sized {
+    type Error: std::fmt::Display;
+
+    fn construct(name: String, arg: String) -> Result<Self, Self::Error>;
+}
+
 //--> Structs
 
 /// The parameters of the object
@@ -266,16 +275,17 @@ pub struct SlideObject<T: Object + Clone> {
 }
 
 /// A slide
-pub struct Slide<T: Object + Clone> {
+pub struct Slide<T: Object + Clone, F: Functions> {
     /// The commands inside the slide
     pub cmds: Vec<Cmd<T>>,
+    pub calls: Vec<F>,
     /// The current frame the slide is on between 0.0-1.0
     pub step: f32,
     bg_from: Vec4,
     bg_to: Vec4,
 }
 
-impl<T: Object + Clone> Slide<T> {
+impl<T: Object + Clone, F: Functions> Slide<T, F> {
     /// Steps the entire slide forward, returning if anything changed.
     #[inline]
     pub fn step(&mut self) -> Vec4 {
@@ -419,6 +429,24 @@ pub fn tokenizer(data: &[u8]) -> (Option<Vec<Token>>, Vec<Simple<u8>>) {
             .recover_with(skip_until([b','], |_| Vec::new()))
             .delimited_by(just(b'{'), just(b'}'))
             .recover_with(nested_delimiters(b'{', b'}', [], |_| Vec::new()))
+            .then(
+                str_parser
+                    .or(text_ident)
+                    .padded()
+                    .then(
+                        str_parser
+                            .or(text_ident)
+                            .padded()
+                            .delimited_by(just(b'('), just(b')'))
+                            .recover_with(nested_delimiters(b'(', b')', [], |_| String::new())),
+                    )
+                    .separated_by(just(b','))
+                    .allow_trailing()
+                    .padded()
+                    .recover_with(skip_until([b','], |_| Vec::new()))
+                    .delimited_by(just(b'['), just(b']'))
+                    .recover_with(nested_delimiters(b'[', b']', [], |_| Vec::new())),
+            )
             .map_with_span(Token::Slide),
         ident_parser
             .then(index_parser.padded())
@@ -494,16 +522,16 @@ pub fn tokenizer(data: &[u8]) -> (Option<Vec<Token>>, Vec<Simple<u8>>) {
 
 /// Converts a `.grz` file into a full slide show made up of commands. Commands contain the object
 /// to be drawn as wellwas the iterator deciding where objects actually go to.
-pub fn file_to_slideshow<K: Object + Clone>(
+pub fn file_to_slideshow<K: Object + Clone, F: Functions>(
     file: &[u8],
     size: Rect,
     opacity_steps: f32,
-) -> Slideshow<K> {
+) -> Slideshow<K, F> {
     let mut layouts: AHashMap<String, Vec<Rect>> = AHashMap::default();
     let mut unused_objects: AHashMap<String, SlideObject<K>> = AHashMap::default();
     let mut objects_in_view: AHashMap<String, (*const SlideObject<K>, Rect, Vec4, LineUp)> =
         AHashMap::default();
-    let mut slides: Vec<Slide<K>> = Vec::new();
+    let mut slides: Vec<Slide<K, F>> = Vec::new();
     let mut registers: AHashMap<Cow<str>, Cow<str>> = AHashMap::default();
     registers.insert(Cow::Borrowed("FONT_SIZE"), Cow::Borrowed("48"));
     registers.insert(Cow::Borrowed("HEADER_FONT_SIZE_ADD"), Cow::Borrowed("24"));
@@ -576,14 +604,16 @@ pub fn file_to_slideshow<K: Object + Clone>(
                     continue;
                 };
                 let mut new_slide = Slide {
-                    cmds: Vec::with_capacity(cmds.len()),
+                    cmds: Vec::with_capacity(cmds.0.len()),
+                    calls: Vec::with_capacity(cmds.1.len()),
                     step: 0.0,
                     bg_from: last_bg,
                     bg_to: bg,
                 };
                 last_bg = bg;
-                let mut modified_names: Vec<String> = Vec::with_capacity(cmds.len());
-                for (((name, split), split_index), (from, goto)) in cmds {
+                let mut modified_names: Vec<String> = Vec::with_capacity(cmds.0.len());
+                println!("{:#?}", cmds.1);
+                for (((name, split), split_index), (from, goto)) in cmds.0 {
                     let vbx = if let Some(rect) = layouts.get(split.as_str()) {
                         rect[split_index]
                     } else if split == "Size" {
@@ -721,6 +751,15 @@ pub fn file_to_slideshow<K: Object + Clone>(
                     }
                 }
                 objects_in_view.retain(|k, _| modified_names.contains(k));
+                for k in cmds.1 {
+                    new_slide.calls.push(match F::construct(k.0, k.1) {
+                        Ok(b) => b,
+                        Err(e) => {
+                            errors.push(Simple::custom(span.clone(), format!("Error: {}", e)));
+                            continue;
+                        }
+                    });
+                }
                 slides.push(new_slide);
             },
             Token::Viewbox(((((name, split), split_index), direction), constraints), span) => {
@@ -794,17 +833,17 @@ pub fn file_to_slideshow<K: Object + Clone>(
             }
             Token::Command(((_, _), _), _) => {} /*
                                                  Token::Command(((name, field), value), span) => {
-                                                     let obj = match unused_objects.get_mut(name.as_str()) {
-                                                         Some(obj) => obj,
-                                                         None => {
-                                                             errors.push(Simple::custom(
-                                                                 span.clone(),
-                                                                 format!("Could not find object {name}"),
-                                                             ));
-                                                             continue;
-                                                         }
-                                                     };
-                                                     obj.obj_type.change_field(field, value);
+                                                 let obj = match unused_objects.get_mut(name.as_str()) {
+                                                 Some(obj) => obj,
+                                                 None => {
+                                                 errors.push(Simple::custom(
+                                                 span.clone(),
+                                                 format!("Could not find object {name}"),
+                                                 ));
+                                                 continue;
+                                                 }
+                                                 };
+                                                 obj.obj_type.change_field(field, value);
                                                  }
                                                  */
         }

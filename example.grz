@@ -30,7 +30,7 @@ Information: Paragraph(
 {
 	Title: VerticalViewbox[0]__..,
 	Information: VerticalViewbox[1]^^..,
-};
+}[];
 
 WhyGrezi: Header(
 	value: "Why Grezi?",
@@ -38,7 +38,7 @@ WhyGrezi: Header(
 
 {
 	WhyGrezi: Size[0]^^..,
-};
+}[];
 
 WhyInfoOne: Paragraph(
 	value: "Faster",
@@ -55,22 +55,20 @@ WhyInfoThree: Paragraph(
 {
 	WhyGrezi: VerticalViewbox[0]....,
 	WhyInfoOne: VerticalViewbox[1]__..,
-};
-
-WhyInfoOne.value: "yeet";
+}[];
 
 {
 	WhyGrezi: VerticalViewbox[0]....,
 	WhyInfoOne: BottomReasonsOne[0]....,
 	WhyInfoTwo: BottomReasonsOne[1]>>..,
-};
+}[];
 
 {
 	WhyGrezi: VerticalViewbox[0]....,
 	WhyInfoOne: BottomReasonsTwo[0]....,
 	WhyInfoTwo: BottomReasonsTwo[1]....,
 	WhyInfoThree: BottomReasonsTwo[2]>>..,
-};
+}[];
 
 ReasonLong: Paragraph(
 	value: "Grezi can allow you to make stunning presentations faster and more efficiently than ever before. With engaging movement and neat effects, Grezi has everything!",
@@ -82,7 +80,7 @@ IKnow: Header(
 
 {
 	IKnow: Size[0]__..,
-};
+}[];
 
 Wow: Paragraph(
 	value: "Wow, that's so cool, how can I do that!",
@@ -91,19 +89,19 @@ Wow: Paragraph(
 {
 	IKnow: VerticalViewbox[0]....,
 	Wow: VerticalViewbox[1]__..,
-};
+}[];
 
 LetsLearn: Header(
 	value: "Let's learn!",
 );
 
 Viewbox: Paragraph(
-	font_family: "Fira Code",
 	alignment: "left",
 	value: "VerticalViewbox: Size[0] ^
     1:2,
     1:2
 ];",
+	font_family: "Fira Code",
 );
 
 SizeThirds: HorizontalViewbox[0] ^
@@ -124,12 +122,12 @@ SizeThirdAndTwo: HorizontalViewbox[0] ^
 
 {
 	LetsLearn: Size[0]__..,
-};
+}[];
 
 {
 	LetsLearn: SizeThirds[1]....,
 	Viewbox: HorizontalViewbox[1]>>..,
-};
+}[];
 
 ThisIsAViewbox: Paragraph(
 	value: "This is a viewbox",
@@ -139,7 +137,7 @@ ThisIsAViewbox: Paragraph(
 	LetsLearn: SizeHalves[0]....,
 	ThisIsAViewbox: SizeHalves[1]__..,
 	Viewbox: HorizontalViewbox[1]....,
-};
+}[];
 
 ViewboxDescription: Paragraph(
 	value: "A viewbox is a method of splitting the screen into multiple pieces. Viewboxes allow for the alignment of text and objects to be completely automatic.",
@@ -149,11 +147,11 @@ ViewboxDescription: Paragraph(
 	LetsLearn: SizeThirdAndTwo[0]....,
 	ViewboxDescription: SizeThirdAndTwo[1]__..,
 	Viewbox: HorizontalViewbox[1]....,
-};
+}[];
 
 ViewboxName: Paragraph(
-	value: "VerticalViewbox",
 	alignment: "left",
+	value: "VerticalViewbox",
 	font_family: "Fira Code",
 );
 
@@ -165,11 +163,11 @@ ViewboxNameDescription: Paragraph(
 	LetsLearn: SizeThirdAndTwo[0]....,
 	ViewboxNameDescription: SizeThirdAndTwo[1]__..,
 	ViewboxName: HorizontalViewbox[1]....,
-};
+}[];
 
 ViewboxSplit: Paragraph(
-	alignment: "left",
 	value: "VerticalViewbox: Size",
+	alignment: "left",
 	font_family: "Fira Code",
 );
 
@@ -181,7 +179,7 @@ ViewboxSplitDescription: Paragraph(
 	LetsLearn: SizeThirdAndTwo[0]....,
 	ViewboxSplitDescription: SizeThirdAndTwo[1]__..,
 	ViewboxSplit: HorizontalViewbox[1]....,
-};
+}[];
 
 ViewboxIndex: Paragraph(
 	font_family: "Fira Code",
@@ -197,11 +195,11 @@ ViewboxIndexDescription: Paragraph(
 	LetsLearn: SizeThirdAndTwo[0]....,
 	ViewboxIndexDescription: SizeThirdAndTwo[1]__..,
 	ViewboxIndex: HorizontalViewbox[1]....,
-};
+}[];
 
 ViewboxDirection: Paragraph(
-	alignment: "left",
 	value: "VerticalViewbox: Size[0] ^",
+	alignment: "left",
 	font_family: "Fira Code",
 );
 
@@ -213,13 +211,13 @@ ViewboxDirectionDescription: Paragraph(
 	LetsLearn: SizeThirdAndTwo[0]....,
 	ViewboxDirectionDescription: SizeThirdAndTwo[1]__..,
 	ViewboxDirection: HorizontalViewbox[1]....,
-};
+}[];
 
 ViewboxConstraints: Paragraph(
-	font_family: "Fira Code",
 	value: "VerticalViewbox: Size[0] ^
     1:2,
     1:2",
+	font_family: "Fira Code",
 	alignment: "left",
 );
 
@@ -231,28 +229,28 @@ ViewboxConstraintsDescription: Paragraph(
 	LetsLearn: SizeThirdAndTwo[0]....,
 	ViewboxConstraintsDescription: SizeThirdAndTwo[1]__..,
 	ViewboxConstraints: HorizontalViewbox[1]....,
-};
+}[];
 
 ValidConstraints: Paragraph(
-	font_family: "Fira Code",
 	value: "1:2, 50%, 24+, 18-, 36",
+	font_family: "Fira Code",
 );
 
 ValidConstraintsDescription: Paragraph(
+	alignment: "left",
 	value: "Valid constraints include:
 - Ratios
 - Percentages
 - Maximum length
 - Minimum length
 - Fixed length",
-	alignment: "left",
 );
 
 {
 	LetsLearn: SizeThirdAndTwo[0]....,
 	ValidConstraintsDescription: SizeThirdAndTwo[1]__..,
 	ValidConstraints: HorizontalViewbox[1]....,
-};
+}[];
 
 ViewboxFinal: Paragraph(
 	value: "Finally we end our viewbox with a bracket '[' and a semicolon ';'",
@@ -262,7 +260,7 @@ ViewboxFinal: Paragraph(
 	LetsLearn: SizeThirdAndTwo[0]....,
 	ViewboxFinal: SizeThirdAndTwo[1]__..,
 	Viewbox: HorizontalViewbox[1]....,
-};
+}[];
 
 YouDidIt: Header(
 	value: "You Made a Viewbox!",
@@ -278,16 +276,16 @@ ObjectsHeader: Header(
 
 {
 	YouDidIt: Size[0]^^..,
-};
+}[];
 
 {
 	YouDidIt: VerticalViewbox[0]....,
 	NowLetsMakeObjects: VerticalViewbox[1]__..,
-};
+}[];
 
 {
 	ObjectsHeader: Size[0]^^..,
-};
+}[];
 
 ObjectsDescription: Paragraph(
 	value: "Objects are what actually go on the slides. There are only a couple right now but there are more to come.",
@@ -310,9 +308,9 @@ ObjectsHowToFour: Paragraph(
 );
 
 ObjectsHowToOneExample: Paragraph(
-	value: "ExampleObject",
-	font_family: "Fira Code",
 	alignment: "left",
+	font_family: "Fira Code",
+	value: "ExampleObject",
 );
 
 ObjectsHowToTwoExample: Paragraph(
@@ -322,48 +320,48 @@ ObjectsHowToTwoExample: Paragraph(
 );
 
 ObjectsHowToThreeExample: Paragraph(
+	alignment: "left",
 	value: "ExampleObject: Paragraph
     (value: 'Very epic gamer cool')",
-	alignment: "left",
 	font_family: "Fira Code",
 );
 
 ObjectsHowToFourExample: Paragraph(
-	font_family: "Fira Code",
+	alignment: "left",
 	value: "ExampleObject: Paragraph
     (value: 'Very epic gamer cool');",
-	alignment: "left",
+	font_family: "Fira Code",
 );
 
 {
 	ObjectsHeader: SizeThirdAndTwo[0]....,
 	ObjectsDescription: SizeThirdAndTwo[1]__..,
 	ObjectsHowToFourExample: HorizontalViewbox[1]>>..,
-};
+}[];
 
 {
 	ObjectsHeader: SizeThirdAndTwo[0]....,
 	ObjectsHowToOne: SizeThirdAndTwo[1]__..,
 	ObjectsHowToOneExample: HorizontalViewbox[1]....,
-};
+}[];
 
 {
 	ObjectsHeader: SizeThirdAndTwo[0]....,
 	ObjectsHowToTwo: SizeThirdAndTwo[1]__..,
 	ObjectsHowToTwoExample: HorizontalViewbox[1]....,
-};
+}[];
 
 {
 	ObjectsHeader: SizeThirdAndTwo[0]....,
 	ObjectsHowToThree: SizeThirdAndTwo[1]__..,
 	ObjectsHowToThreeExample: HorizontalViewbox[1]....,
-};
+}[];
 
 {
 	ObjectsHeader: SizeThirdAndTwo[0]....,
 	ObjectsHowToFour: SizeThirdAndTwo[1]__..,
 	ObjectsHowToFourExample: HorizontalViewbox[1]....,
-};
+}[];
 
 AndFinally: Header(
 	value: "And finally",
@@ -379,16 +377,16 @@ SlidesName: Header(
 
 {
 	AndFinally: Size[0]^^..,
-};
+}[];
 
 {
 	AndFinally: VerticalViewbox[0]....,
 	LetsMoveOnSlides: VerticalViewbox[1]__..,
-};
+}[];
 
 {
 	SlidesName: Size[0]^^..,
-};
+}[];
 
 MoreSpace: Size[0] >
 	1:3,
@@ -443,8 +441,8 @@ SlidesEight: Paragraph(
 
 SlidesOneExample: Paragraph(
 	alignment: "left",
-	value: "{",
 	font_family: "Fira Code",
+	value: "{",
 );
 
 SlidesTwoExample: Paragraph(
@@ -469,13 +467,12 @@ SlidesFourExample: Paragraph(
 );
 
 SlidesFiveExample: Paragraph(
+	value: "^^..",
 	alignment: "left",
 	font_family: "Fira Code",
-	value: "^^..",
 );
 
 SlidesSixExample: Paragraph(
-	font_family: "Fira Code",
 	value: "....
 
 ..^<
@@ -483,72 +480,73 @@ SlidesSixExample: Paragraph(
 ^<^>
 
 ._.^",
+	font_family: "Fira Code",
 );
 
 SlidesSevenExample: Paragraph(
+	alignment: "left",
+	font_family: "Fira Code",
 	value: "{
     TitleObject: VerticalViewbox[0]^^..,
     Subtitle: VerticalViewbox[1]__..",
-	alignment: "left",
-	font_family: "Fira Code",
 );
 
 SlidesEightExample: Paragraph(
-	font_family: "Fira Code",
-	alignment: "left",
 	value: "{
     TitleObject: VerticalViewbox[0]^^..,
     Subtitle: VerticalViewbox[1]__..
-};",
+}[];",
+	font_family: "Fira Code",
+	alignment: "left",
 );
 
 {
 	SlidesName: MoreSpaceThirdAndTwo[0]....,
 	SlidesOne: MoreSpaceThirdAndTwo[1]__..,
 	SlidesOneExample: MoreSpace[1]....,
-};
+}[];
 
 {
 	SlidesName: MoreSpaceThirdAndTwo[0]....,
 	SlidesTwo: MoreSpaceThirdAndTwo[1]__..,
 	SlidesTwoExample: MoreSpace[1]....,
-};
+}[];
 
 {
 	SlidesName: MoreSpaceThirdAndTwo[0]....,
 	SlidesThree: MoreSpaceThirdAndTwo[1]__..,
 	SlidesThreeExample: MoreSpace[1]....,
-};
+}[];
 
 {
 	SlidesName: MoreSpaceThirdAndTwo[0]....,
 	SlidesFour: MoreSpaceThirdAndTwo[1]__..,
 	SlidesFourExample: MoreSpace[1]....,
-};
+}[];
 
 {
 	SlidesName: SizeThirdAndTwo[0]....,
 	SlidesFive: SizeThirdAndTwo[1]__..,
 	SlidesFiveExample: HorizontalViewbox[1]....,
-};
+}[];
 
 {
 	SlidesName: SizeThirdAndTwo[0]....,
 	SlidesSix: SizeThirdAndTwo[1]__..,
 	SlidesSixExample: HorizontalViewbox[1]....,
-};
+}[];
 
 {
 	SlidesName: MoreSpaceThirdAndTwo[0]....,
 	SlidesSeven: MoreSpaceThirdAndTwo[1]__..,
 	SlidesSevenExample: MoreSpace[1]....,
-};
+}[];
 
 {
 	SlidesName: MoreSpaceThirdAndTwo[0]....,
 	SlidesEight: MoreSpaceThirdAndTwo[1]__..,
 	SlidesEightExample: MoreSpace[1]....,
-};
+}[];
 
 Congrats: Header(
 	value: "Congratulations!",
@@ -560,9 +558,9 @@ YourAMaster: Paragraph(
 
 {
 	Congrats: Size[0]__..,
-};
+}[];
 
 {
 	Congrats: VerticalViewbox[0]....,
 	YourAMaster: VerticalViewbox[1]__..,
-};
+}[];

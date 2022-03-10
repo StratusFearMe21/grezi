@@ -1,8 +1,14 @@
-use std::{borrow::Cow, mem::MaybeUninit, path::PathBuf, time::Instant};
+use std::{borrow::Cow, io::Cursor, mem::MaybeUninit, path::PathBuf, time::Instant};
 
 use anyhow::{bail, Context};
 use ariadne::Label;
-use grezi::{layout::Rect, AHashMap};
+use audio::{Sdl2Backend, Sdl2Settings};
+use grezi::{layout::Rect, AHashMap, Functions, Slide};
+use kira::{
+    manager::{AudioManager, AudioManagerSettings},
+    sound::static_sound::{StaticSoundData, StaticSoundSettings},
+    track::TrackBuilder,
+};
 use sdl2::{
     event::{Event, WindowEvent},
     keyboard::Keycode,
@@ -18,6 +24,8 @@ use skulpin::{
 };
 use structopt::StructOpt;
 static mut FONT_CACHE: MaybeUninit<FontCollection> = MaybeUninit::uninit();
+
+mod audio;
 
 #[derive(StructOpt)]
 struct Opts {
@@ -268,6 +276,110 @@ impl grezi::Object for ObjectType {
     }
 }
 
+pub const ROLLOVERS: [&[u8]; 6] = [
+    include_bytes!("audio/rollover1.ogg"),
+    include_bytes!("audio/rollover2.ogg"),
+    include_bytes!("audio/rollover3.ogg"),
+    include_bytes!("audio/rollover4.ogg"),
+    include_bytes!("audio/rollover5.ogg"),
+    include_bytes!("audio/rollover6.ogg"),
+];
+
+pub const CLICKS: [&[u8]; 7] = [
+    include_bytes!("audio/click1.ogg"),
+    include_bytes!("audio/click2.ogg"),
+    include_bytes!("audio/click3.ogg"),
+    include_bytes!("audio/click4.ogg"),
+    include_bytes!("audio/click5.ogg"),
+    include_bytes!("audio/click6.ogg"),
+    include_bytes!("audio/click7.ogg"),
+];
+
+pub const SWITCHES: [&[u8]; 37] = [
+    include_bytes!("audio/switch1.ogg"),
+    include_bytes!("audio/switch2.ogg"),
+    include_bytes!("audio/switch3.ogg"),
+    include_bytes!("audio/switch4.ogg"),
+    include_bytes!("audio/switch5.ogg"),
+    include_bytes!("audio/switch6.ogg"),
+    include_bytes!("audio/switch8.ogg"),
+    include_bytes!("audio/switch9.ogg"),
+    include_bytes!("audio/switch10.ogg"),
+    include_bytes!("audio/switch11.ogg"),
+    include_bytes!("audio/switch12.ogg"),
+    include_bytes!("audio/switch13.ogg"),
+    include_bytes!("audio/switch14.ogg"),
+    include_bytes!("audio/switch15.ogg"),
+    include_bytes!("audio/switch16.ogg"),
+    include_bytes!("audio/switch17.ogg"),
+    include_bytes!("audio/switch18.ogg"),
+    include_bytes!("audio/switch19.ogg"),
+    include_bytes!("audio/switch20.ogg"),
+    include_bytes!("audio/switch21.ogg"),
+    include_bytes!("audio/switch22.ogg"),
+    include_bytes!("audio/switch23.ogg"),
+    include_bytes!("audio/switch24.ogg"),
+    include_bytes!("audio/switch25.ogg"),
+    include_bytes!("audio/switch26.ogg"),
+    include_bytes!("audio/switch27.ogg"),
+    include_bytes!("audio/switch28.ogg"),
+    include_bytes!("audio/switch29.ogg"),
+    include_bytes!("audio/switch30.ogg"),
+    include_bytes!("audio/switch31.ogg"),
+    include_bytes!("audio/switch32.ogg"),
+    include_bytes!("audio/switch33.ogg"),
+    include_bytes!("audio/switch34.ogg"),
+    include_bytes!("audio/switch35.ogg"),
+    include_bytes!("audio/switch36.ogg"),
+    include_bytes!("audio/switch37.ogg"),
+    include_bytes!("audio/switch38.ogg"),
+];
+
+enum SkiaFunctions {
+    Play(StaticSoundData),
+}
+
+impl Functions for SkiaFunctions {
+    type Error = anyhow::Error;
+
+    fn construct(name: String, arg: String) -> Result<Self, Self::Error> {
+        match name.as_str() {
+            "PlayRollover" | "play_rollover" => {
+                Ok(SkiaFunctions::Play(StaticSoundData::from_cursor(
+                    if let Some(s) = ROLLOVERS.get(arg.parse::<usize>()?) {
+                        Cursor::new(s)
+                    } else {
+                        bail!("Invalid rollover {}", arg)
+                    },
+                    StaticSoundSettings::default(),
+                )?))
+            }
+            "PlayClick" | "play_click" => Ok(SkiaFunctions::Play(StaticSoundData::from_cursor(
+                if let Some(s) = CLICKS.get(arg.parse::<usize>()?) {
+                    Cursor::new(s)
+                } else {
+                    bail!("Invalid rollover {}", arg)
+                },
+                StaticSoundSettings::default(),
+            )?)),
+            "PlaySwitch" | "play_switch" => Ok(SkiaFunctions::Play(StaticSoundData::from_cursor(
+                if let Some(s) = SWITCHES.get(arg.parse::<usize>()?) {
+                    Cursor::new(s)
+                } else {
+                    bail!("Invalid rollover {}", arg)
+                },
+                StaticSoundSettings::default(),
+            )?)),
+            n => bail!("Invalid function {}", n),
+        }
+    }
+}
+
+enum TransitionDirection {
+    Forward,
+    Backward,
+}
+
 fn main() -> anyhow::Result<()> {
     rayon::ThreadPoolBuilder::new().build_global()?;
     let opts = Opts::from_args();
@@ -282,21 +394,22 @@ fn main() -> anyhow::Result<()> {
     };
     unsafe { FONT_CACHE.write(FontCollection::new()) }
         .set_default_font_manager(FontMgr::default(), None);
-    let mut slideshow = match grezi::file_to_slideshow(&map, size, 1.0) {
-        Ok(slides) => slides,
-        Err(errors) => {
-            let mut report = ariadne::Report::build(ariadne::ReportKind::Error, (), 0);
-            for e in errors {
-                report = report
-                    .with_label(Label::new(e.span()).with_message(&e))
-                    .with_message(e.label().unwrap_or("Unknown Error"))
+    let mut slideshow: Vec<Slide<ObjectType, SkiaFunctions>> =
+        match grezi::file_to_slideshow(&map, size, 1.0) {
+            Ok(slides) => slides,
+            Err(errors) => {
+                let mut report = ariadne::Report::build(ariadne::ReportKind::Error, (), 0);
+                for e in errors {
+                    report = report
+                        .with_label(Label::new(e.span()).with_message(&e))
+                        .with_message(e.label().unwrap_or("Unknown Error"))
+                }
+                report.finish().eprint(ariadne::Source::from(unsafe {
+                    std::str::from_utf8_unchecked(map.as_ref())
+                }))?;
+                bail!("Failed to compile presentation")
             }
-            report.finish().eprint(ariadne::Source::from(unsafe {
-                std::str::from_utf8_unchecked(map.as_ref())
-            }))?;
-            bail!("Failed to compile presentation")
-        }
-    };
+        };
 
     let sdl_ctx = sdl2::init().map_err(|e| anyhow::anyhow!(e))?;
     let game_controller_subsystem = sdl_ctx.game_controller().map_err(|e| anyhow::anyhow!(e))?;
@@ -320,6 +433,21 @@ fn main() -> anyhow::Result<()> {
         }
     });
     let mut event_pump = sdl_ctx.event_pump().map_err(|e| anyhow::anyhow!(e))?;
+    let audio_ctx = sdl_ctx.audio().map_err(|e| anyhow::anyhow!(e))?;
+    let mut kira_ctx: AudioManager<Sdl2Backend> = AudioManager::new(AudioManagerSettings {
+        backend_settings: Sdl2Settings {
+            subsystem: audio_ctx,
+            spec: sdl2::audio::AudioSpecDesired {
+                freq: None,
+                channels: Some(2),
+                samples: None,
+            },
+        },
+        capacities: kira::manager::Capacities::default(),
+        main_track_builder: TrackBuilder::default(),
+    })
+    .unwrap();
+
     let video_ctx = sdl_ctx.video().map_err(|e| anyhow::anyhow!(e))?;
     let window = video_ctx
         .window("Grezi", 1920, 1080)
@@ -327,6 +455,7 @@ fn main() -> anyhow::Result<()> {
         .allow_highdpi()
         .resizable()
         .build()?;
+
     let window_size = window.vulkan_drawable_size();
     let mut extents = RafxExtents2D {
         width: window_size.0,
@@ -349,7 +478,6 @@ fn main() -> anyhow::Result<()> {
         .build(&window, extents)?;
     let mut index = 0;
     let mut drawing = true;
-    let mut previous_frame_start = Instant::now();
     #[cfg(debug_assertions)]
     let fps_font = Font::new(
         Typeface::new("Helvetica", FontStyle::default()).context("Invalid typeface")?,
@@ -358,6 +486,16 @@ fn main() -> anyhow::Result<()> {
     #[cfg(debug_assertions)]
     let fps_paint = Paint::new(Color4f::new(1.0, 1.0, 1.0, 1.0), None);
     let mut bg = Color4f::new(0.39, 0.39, 0.39, 1.0);
+    let mut previous_frame_start = Instant::now();
+    let slide = unsafe { slideshow.get_unchecked(index) };
+    let mut transition_direction = TransitionDirection::Forward;
+    for i in slide.calls.iter() {
+        match i {
+            SkiaFunctions::Play(handle) => {
+                kira_ctx.play(handle.clone())?;
+            }
+        }
+    }
     'running: loop {
         let frame_start = Instant::now();
         assert!(event_pump.is_event_enabled(sdl2::event::EventType::ControllerButtonDown));
@@ -375,11 +513,18 @@ fn main() -> anyhow::Result<()> {
                         height: new_size.1,
                     };
                 }
-                Event::KeyDown { keycode, .. } => match keycode {
-                    Some(Keycode::Q) => {
-                        break 'running;
-                    }
-                    Some(Keycode::Right)
+                Event::KeyDown {
+                    keycode: Some(Keycode::Q),
+                    ..
+                }
+                | Event::ControllerButtonDown {
+                    button: sdl2::controller::Button::Guide,
+                    ..
+                } => {
+                    break 'running;
+                }
+                Event::KeyDown {
+                    keycode: Some(Keycode::Right)
                         // These are bindings for the 8bitdo Zero 2
                         // No, they don't make sense
                         //
@@ -392,14 +537,37 @@ fn main() -> anyhow::Result<()> {
                         // Start button
                         | Some(Keycode::O)
                         // "A" Button
-                        | Some(Keycode::G) => {
-                            if index != slideshow.len() - 1 {
+                        | Some(Keycode::G),
+                        ..
+                } | Event::MouseButtonDown { mouse_btn: sdl2::mouse::MouseButton::Left, .. } | Event::ControllerButtonDown { button: sdl2::controller::Button::A
+                    | sdl2::controller::Button::Start
+                    | sdl2::controller::Button::DPadUp
+                    | sdl2::controller::Button::DPadRight
+                    | sdl2::controller::Button::RightShoulder
+                    | sdl2::controller::Button::RightStick, .. } => {
+                        if index != slideshow.len() - 1 {
+                                                        if let TransitionDirection::Forward = transition_direction {
                                 index += 1;
+                                unsafe {
+                                    slideshow.get_unchecked_mut(index).step = 0.0;
+                                }
+                             } else {
+                                transition_direction = TransitionDirection::Forward;
+
+                             }
                                 drawing = true;
+                                let slide = unsafe { slideshow.get_unchecked(index) };
+                                for i in slide.calls.iter() {
+                                    match i {
+                                        SkiaFunctions::Play(handle) => {
+                                            kira_ctx.play(handle.clone())?;
+                                        }
+                                    }
+                                }
                                 previous_frame_start = frame_start;
                             }
-                        }
-                    Some(Keycode::Left)
+                    }
+                Event::KeyDown { keycode: Some(Keycode::Left)
                         // Left Shoulder button
                         | Some(Keycode::K)
                         // Left D-Pad
@@ -409,114 +577,51 @@ fn main() -> anyhow::Result<()> {
                         // Select button
                         | Some(Keycode::N)
                         // "B" Button
-                        | Some(Keycode::J) => {
-                            if index != 0 {
-                                unsafe {
-                                    slideshow.get_unchecked_mut(index).step = 0.0;
-                                }
-                                index -= 1;
-                                unsafe {
-                                    slideshow.get_unchecked_mut(index).step = 1.0;
-                                }
-                                drawing = true;
-                                previous_frame_start = frame_start;
-                            }
-                        }
-                    _ => {}
-                },
-                Event::MouseButtonDown { mouse_btn, .. } => match mouse_btn {
-                    sdl2::mouse::MouseButton::Left => {
-                        if index != slideshow.len() - 1 {
-                            index += 1;
-                            drawing = true;
-                            previous_frame_start = frame_start;
-                        }
-                    }
-                    sdl2::mouse::MouseButton::Right => {
-                        if index != 0 {
-                            unsafe {
-                                slideshow.get_unchecked_mut(index).step = 0.0;
-                            }
-                            index -= 1;
-                            unsafe {
-                                slideshow.get_unchecked_mut(index).step = 1.0;
-                            }
-                            drawing = true;
-                            previous_frame_start = frame_start;
-                        }
-                    }
-                    _ => {}
-                },
-                Event::ControllerDeviceAdded { which, .. } => {
-                    if let Some(None) = controllers.get(which as usize) {
-                        unsafe {
-                            *controllers.get_unchecked_mut(which as usize) =
-                                if game_controller_subsystem.is_game_controller(which) {
-                                    match game_controller_subsystem.open(which) {
-                                        Ok(c) => {
-                                            // We managed to find and open a game controller,
-                                            // exit the loop
-                                            Some(c)
-                                        }
-                                        Err(_) => None,
-                                    }
-                                } else {
-                                    None
-                                };
-                        }
-                    }
-                }
-                Event::ControllerDeviceRemoved { which, .. } => {
-                    if let Some(c) = controllers.get_mut(which as usize) {
-                        c.take();
-                    }
-                }
-                Event::ControllerButtonDown { button, .. } => match button {
-                    sdl2::controller::Button::Guide => {
-                        break 'running;
-                    }
-                    sdl2::controller::Button::A
-                    | sdl2::controller::Button::Start
-                    | sdl2::controller::Button::DPadUp
-                    | sdl2::controller::Button::DPadRight
-                    | sdl2::controller::Button::RightShoulder
-                    | sdl2::controller::Button::RightStick => {
-                        if index != slideshow.len() - 1 {
-                            index += 1;
-                            drawing = true;
-                            previous_frame_start = frame_start;
-                        }
-                    }
-                    sdl2::controller::Button::B
+                        | Some(Keycode::J), .. } | Event::MouseButtonDown { mouse_btn: sdl2::mouse::MouseButton::Right, .. } | Event::ControllerButtonDown { button: sdl2::controller::Button::B
                     | sdl2::controller::Button::Back
                     | sdl2::controller::Button::DPadDown
                     | sdl2::controller::Button::DPadLeft
                     | sdl2::controller::Button::LeftShoulder
-                    | sdl2::controller::Button::LeftStick => {
-                        if index != 0 {
-                            unsafe {
-                                slideshow.get_unchecked_mut(index).step = 0.0;
+                    | sdl2::controller::Button::LeftStick, .. } => {
+if index != 0 {
+                                                               if let TransitionDirection::Backward = transition_direction {
+                                    index -= 1;
+                                    unsafe {
+                                        slideshow.get_unchecked_mut(index).step = 1.0;
+                                    }
+                                } else {
+                                    transition_direction = TransitionDirection::Backward;
+                                    unsafe {
+                                        slideshow.get_unchecked_mut(index - 1).step = 1.0;
+                                    }
+                                }
+                                drawing = true;
+                                previous_frame_start = frame_start;
                             }
-                            index -= 1;
-                            unsafe {
-                                slideshow.get_unchecked_mut(index).step = 1.0;
-                            }
-                            drawing = true;
-                            previous_frame_start = frame_start;
-                        }
                     }
-                    _ => {}
-                },
                 _ => {}
-            }
+                        }
         }
 
         if drawing {
             let slide = unsafe { slideshow.get_unchecked_mut(index) };
-            slide.step += (frame_start - previous_frame_start).as_secs_f32() / opts.delay;
-            if slide.step >= 1.0 {
-                slide.step = 1.0;
-                drawing = false;
+            match transition_direction {
+                TransitionDirection::Forward => {
+                    slide.step += (frame_start - previous_frame_start).as_secs_f32() / opts.delay;
+                    if slide.step >= 1.0 {
+                        slide.step = 1.0;
+                        drawing = false;
+                    }
+                }
+                TransitionDirection::Backward => {
+                    slide.step -= (frame_start - previous_frame_start).as_secs_f32() / opts.delay;
+                    if slide.step <= 0.0 {
+                        slide.step = 0.0;
+                        drawing = false;
+                        index -= 1;
+                        transition_direction = TransitionDirection::Forward;
+                    }
+                }
             }
             previous_frame_start = frame_start;
             let bg_raw = slide.step();
