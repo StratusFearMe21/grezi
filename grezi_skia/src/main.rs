@@ -370,6 +370,9 @@ impl Functions for SkiaFunctions {
                 },
                 StaticSoundSettings::default(),
             )?)),
+            "PlayFile" | "play_file" | "Play" | "play" => Ok(SkiaFunctions::Play(
+                StaticSoundData::from_file(arg, StaticSoundSettings::default())?,
+            )),
             n => bail!("Invalid function {}", n),
         }
     }

@@ -612,7 +612,6 @@ pub fn file_to_slideshow<K: Object + Clone, F: Functions>(
                 };
                 last_bg = bg;
                 let mut modified_names: Vec<String> = Vec::with_capacity(cmds.0.len());
-                println!("{:#?}", cmds.1);
                 for (((name, split), split_index), (from, goto)) in cmds.0 {
                     let vbx = if let Some(rect) = layouts.get(split.as_str()) {
                         rect[split_index]
