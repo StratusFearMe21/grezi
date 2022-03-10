@@ -485,8 +485,7 @@ fn main() -> anyhow::Result<()> {
         Typeface::new("Helvetica", FontStyle::default()).context("Invalid typeface")?,
         10.0,
     );
-    #[cfg(debug_assertions)]
-    let fps_paint = Paint::new(Color4f::new(1.0, 1.0, 1.0, 1.0), None);
+    let mut paint = Paint::new(Color4f::new(1.0, 1.0, 1.0, 1.0), None);
     let mut bg = Color4f::new(0.39, 0.39, 0.39, 1.0);
     let mut previous_frame_start = Instant::now();
     let slide = unsafe { slideshow.get_unchecked(index) };
@@ -631,6 +630,7 @@ if index != 0 {
         let slide = unsafe { slideshow.get_unchecked_mut(index) };
         skia.draw(extents, 1.0, |canvas, _coordinate_system_helper| {
             canvas.clear(bg);
+            paint.set_alpha_f(1.0);
             #[cfg(debug_assertions)]
             canvas.draw_str(
                 format!(
@@ -639,7 +639,7 @@ if index != 0 {
                 ),
                 (10.0, 10.0),
                 &fps_font,
-                &fps_paint,
+                &paint,
             );
             for cmd in slide.cmds.iter_mut() {
                 #[cfg(debug_assertions)]
@@ -680,10 +680,11 @@ if index != 0 {
                         p_style.unwrap();
                     }
                     ObjectType::Image { ref img, .. } => {
-                        let paint = skulpin::skia_safe::Paint::new(
+                        paint.set_color4f(
                             Color4f::new(1.0, 1.0, 1.0, cmd.obj.parameters.opacity),
                             None,
                         );
+                        paint.set_stroke(false);
                         canvas.draw_image_rect(
                             img,
                             None,
@@ -697,7 +698,7 @@ if index != 0 {
                         );
                     }
                     ObjectType::Rect => {
-                        let mut paint = skulpin::skia_safe::Paint::new(
+                        paint.set_color4f(
                             Color4f::new(1.0, 1.0, 1.0, cmd.obj.parameters.opacity),
                             None,
                         );
