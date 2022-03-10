@@ -55,20 +55,26 @@ WhyInfoThree: Paragraph(
 {
 	WhyGrezi: VerticalViewbox[0]....,
 	WhyInfoOne: VerticalViewbox[1]__..,
-}[];
+}[
+	PlayRollover(2)
+];
 
 {
 	WhyGrezi: VerticalViewbox[0]....,
 	WhyInfoOne: BottomReasonsOne[0]....,
 	WhyInfoTwo: BottomReasonsOne[1]>>..,
-}[];
+}[
+	PlayRollover(2)
+];
 
 {
 	WhyGrezi: VerticalViewbox[0]....,
 	WhyInfoOne: BottomReasonsTwo[0]....,
 	WhyInfoTwo: BottomReasonsTwo[1]....,
 	WhyInfoThree: BottomReasonsTwo[2]>>..,
-}[];
+}[
+	PlayRollover(2)
+];
 
 ReasonLong: Paragraph(
 	value: "Grezi can allow you to make stunning presentations faster and more efficiently than ever before. With engaging movement and neat effects, Grezi has everything!",
@@ -100,8 +106,8 @@ Viewbox: Paragraph(
     1:2,
     1:2
 ];",
-	font_family: "Fira Code",
 	alignment: "left",
+	font_family: "Fira Code",
 );
 
 SizeThirds: HorizontalViewbox[0] ^
@@ -151,8 +157,8 @@ ViewboxDescription: Paragraph(
 
 ViewboxName: Paragraph(
 	font_family: "Fira Code",
-	alignment: "left",
 	value: "VerticalViewbox",
+	alignment: "left",
 );
 
 ViewboxNameDescription: Paragraph(
@@ -166,9 +172,9 @@ ViewboxNameDescription: Paragraph(
 }[];
 
 ViewboxSplit: Paragraph(
-	font_family: "Fira Code",
-	alignment: "left",
 	value: "VerticalViewbox: Size",
+	alignment: "left",
+	font_family: "Fira Code",
 );
 
 ViewboxSplitDescription: Paragraph(
@@ -182,8 +188,8 @@ ViewboxSplitDescription: Paragraph(
 }[];
 
 ViewboxIndex: Paragraph(
-	alignment: "left",
 	font_family: "Fira Code",
+	alignment: "left",
 	value: "VerticalViewbox: Size[0]",
 );
 
@@ -198,9 +204,9 @@ ViewboxIndexDescription: Paragraph(
 }[];
 
 ViewboxDirection: Paragraph(
-	alignment: "left",
 	value: "VerticalViewbox: Size[0] ^",
 	font_family: "Fira Code",
+	alignment: "left",
 );
 
 ViewboxDirectionDescription: Paragraph(
@@ -214,8 +220,8 @@ ViewboxDirectionDescription: Paragraph(
 }[];
 
 ViewboxConstraints: Paragraph(
-	font_family: "Fira Code",
 	alignment: "left",
+	font_family: "Fira Code",
 	value: "VerticalViewbox: Size[0] ^
     1:2,
     1:2",
@@ -308,9 +314,9 @@ ObjectsHowToFour: Paragraph(
 );
 
 ObjectsHowToOneExample: Paragraph(
+	value: "ExampleObject",
 	font_family: "Fira Code",
 	alignment: "left",
-	value: "ExampleObject",
 );
 
 ObjectsHowToTwoExample: Paragraph(
@@ -320,16 +326,16 @@ ObjectsHowToTwoExample: Paragraph(
 );
 
 ObjectsHowToThreeExample: Paragraph(
-	alignment: "left",
 	value: "ExampleObject: Paragraph
     (value: 'Very epic gamer cool')",
+	alignment: "left",
 	font_family: "Fira Code",
 );
 
 ObjectsHowToFourExample: Paragraph(
-	font_family: "Fira Code",
 	value: "ExampleObject: Paragraph
     (value: 'Very epic gamer cool');",
+	font_family: "Fira Code",
 	alignment: "left",
 );
 
@@ -440,39 +446,40 @@ SlidesEight: Paragraph(
 );
 
 SlidesOneExample: Paragraph(
-	font_family: "Fira Code",
 	alignment: "left",
 	value: "{",
+	font_family: "Fira Code",
 );
 
 SlidesTwoExample: Paragraph(
+	font_family: "Fira Code",
 	value: "{
     TitleObject",
-	font_family: "Fira Code",
 	alignment: "left",
 );
 
 SlidesThreeExample: Paragraph(
-	font_family: "Fira Code",
+	alignment: "left",
 	value: "{
     TitleObject: VerticalViewbox[0]",
-	alignment: "left",
+	font_family: "Fira Code",
 );
 
 SlidesFourExample: Paragraph(
-	alignment: "left",
-	font_family: "Fira Code",
 	value: "{
     TitleObject: VerticalViewbox[0]^^..",
+	alignment: "left",
+	font_family: "Fira Code",
 );
 
 SlidesFiveExample: Paragraph(
-	alignment: "left",
 	font_family: "Fira Code",
 	value: "^^..",
+	alignment: "left",
 );
 
 SlidesSixExample: Paragraph(
+	font_family: "Fira Code",
 	value: "....
 
 ..^<
@@ -480,23 +487,22 @@ SlidesSixExample: Paragraph(
 ^<^>
 
 ._.^",
-	font_family: "Fira Code",
 );
 
 SlidesSevenExample: Paragraph(
+	font_family: "Fira Code",
+	alignment: "left",
 	value: "{
     TitleObject: VerticalViewbox[0]^^..,
     Subtitle: VerticalViewbox[1]__..",
-	alignment: "left",
-	font_family: "Fira Code",
 );
 
 SlidesEightExample: Paragraph(
-	font_family: "Fira Code",
 	value: "{
     TitleObject: VerticalViewbox[0]^^..,
     Subtitle: VerticalViewbox[1]__..
 }[];",
+	font_family: "Fira Code",
 	alignment: "left",
 );
 

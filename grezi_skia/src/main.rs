@@ -1,4 +1,4 @@
-use std::{borrow::Cow, io::Cursor, mem::MaybeUninit, path::PathBuf, time::Instant};
+use std::{borrow::Cow, mem::MaybeUninit, path::PathBuf, time::Instant};
 
 use anyhow::{bail, Context};
 use ariadne::Label;
@@ -275,65 +275,6 @@ impl grezi::Object for ObjectType {
     }
 }
 
-pub const ROLLOVERS: [&[u8]; 6] = [
-    include_bytes!("audio/rollover1.ogg"),
-    include_bytes!("audio/rollover2.ogg"),
-    include_bytes!("audio/rollover3.ogg"),
-    include_bytes!("audio/rollover4.ogg"),
-    include_bytes!("audio/rollover5.ogg"),
-    include_bytes!("audio/rollover6.ogg"),
-];
-
-pub const CLICKS: [&[u8]; 7] = [
-    include_bytes!("audio/click1.ogg"),
-    include_bytes!("audio/click2.ogg"),
-    include_bytes!("audio/click3.ogg"),
-    include_bytes!("audio/click4.ogg"),
-    include_bytes!("audio/click5.ogg"),
-    include_bytes!("audio/click6.ogg"),
-    include_bytes!("audio/click7.ogg"),
-];
-
-pub const SWITCHES: [&[u8]; 37] = [
-    include_bytes!("audio/switch1.ogg"),
-    include_bytes!("audio/switch2.ogg"),
-    include_bytes!("audio/switch3.ogg"),
-    include_bytes!("audio/switch4.ogg"),
-    include_bytes!("audio/switch5.ogg"),
-    include_bytes!("audio/switch6.ogg"),
-    include_bytes!("audio/switch8.ogg"),
-    include_bytes!("audio/switch9.ogg"),
-    include_bytes!("audio/switch10.ogg"),
-    include_bytes!("audio/switch11.ogg"),
-    include_bytes!("audio/switch12.ogg"),
-    include_bytes!("audio/switch13.ogg"),
-    include_bytes!("audio/switch14.ogg"),
-    include_bytes!("audio/switch15.ogg"),
-    include_bytes!("audio/switch16.ogg"),
-    include_bytes!("audio/switch17.ogg"),
-    include_bytes!("audio/switch18.ogg"),
-    include_bytes!("audio/switch19.ogg"),
-    include_bytes!("audio/switch20.ogg"),
-    include_bytes!("audio/switch21.ogg"),
-    include_bytes!("audio/switch22.ogg"),
-    include_bytes!("audio/switch23.ogg"),
-    include_bytes!("audio/switch24.ogg"),
-    include_bytes!("audio/switch25.ogg"),
-    include_bytes!("audio/switch26.ogg"),
-    include_bytes!("audio/switch27.ogg"),
-    include_bytes!("audio/switch28.ogg"),
-    include_bytes!("audio/switch29.ogg"),
-    include_bytes!("audio/switch30.ogg"),
-    include_bytes!("audio/switch31.ogg"),
-    include_bytes!("audio/switch32.ogg"),
-    include_bytes!("audio/switch33.ogg"),
-    include_bytes!("audio/switch34.ogg"),
-    include_bytes!("audio/switch35.ogg"),
-    include_bytes!("audio/switch36.ogg"),
-    include_bytes!("audio/switch37.ogg"),
-    include_bytes!("audio/switch38.ogg"),
-];
-
 enum SkiaFunctions {
     Play(StaticSoundData),
 }
@@ -343,32 +284,6 @@ impl Functions for SkiaFunctions {
 
     fn construct(name: String, arg: String) -> Result<Self, Self::Error> {
         match name.as_str() {
-            "PlayRollover" | "play_rollover" => {
-                Ok(SkiaFunctions::Play(StaticSoundData::from_cursor(
-                    if let Some(s) = ROLLOVERS.get(arg.parse::<usize>()?) {
-                        Cursor::new(s)
-                    } else {
-                        bail!("Invalid rollover {}", arg)
-                    },
-                    StaticSoundSettings::default(),
-                )?))
-            }
-            "PlayClick" | "play_click" => Ok(SkiaFunctions::Play(StaticSoundData::from_cursor(
-                if let Some(s) = CLICKS.get(arg.parse::<usize>()?) {
-                    Cursor::new(s)
-                } else {
-                    bail!("Invalid rollover {}", arg)
-                },
-                StaticSoundSettings::default(),
-            )?)),
-            "PlaySwitch" | "play_switch" => Ok(SkiaFunctions::Play(StaticSoundData::from_cursor(
-                if let Some(s) = SWITCHES.get(arg.parse::<usize>()?) {
-                    Cursor::new(s)
-                } else {
-                    bail!("Invalid rollover {}", arg)
-                },
-                StaticSoundSettings::default(),
-            )?)),
             "PlayFile" | "play_file" | "Play" | "play" => Ok(SkiaFunctions::Play(
                 StaticSoundData::from_file(arg, StaticSoundSettings::default())?,
             )),
