@@ -1,5 +1,5 @@
 [workspace]
-members = ["lib_grezi", "grezi_skia", "grzfmt"]
+members = ["lib_grezi", "grezi_skia", "grzfmt", "grezi_composer"]
 
 [profile.release]
 lto = "fat"

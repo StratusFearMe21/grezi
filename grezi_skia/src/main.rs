@@ -501,11 +501,9 @@ fn main() -> anyhow::Result<()> {
     }
     'running: loop {
         let frame_start = Instant::now();
-        assert!(event_pump.is_event_enabled(sdl2::event::EventType::ControllerButtonDown));
 
         for event in event_pump.poll_iter() {
             match event {
-                Event::Quit { .. } => break 'running,
                 Event::Window {
                     win_event: WindowEvent::Resized(_, _) | WindowEvent::SizeChanged(_, _),
                     ..
@@ -516,8 +514,8 @@ fn main() -> anyhow::Result<()> {
                         height: new_size.1,
                     };
                 }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Q),
+                Event::Quit { .. } | Event::KeyDown {
+                    keycode: Some(Keycode::Q) | Some(Keycode::Escape),
                     ..
                 }
                 | Event::ControllerButtonDown {
