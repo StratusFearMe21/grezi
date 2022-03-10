@@ -22,3 +22,4 @@ kira = { version = "0.6.0", default-features = false, features = [
 ] }
 sdl2 = { version = "0.35.2", features = ["raw-window-handle"] }
 ringbuf = "0.2.7"
+ash = "0.32.0"

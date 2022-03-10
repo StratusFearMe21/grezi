@@ -370,6 +370,7 @@ fn main() -> anyhow::Result<()> {
         .window("Grezi", 1920, 1080)
         .fullscreen()
         .allow_highdpi()
+        .vulkan()
         .resizable()
         .build()?;
 
@@ -455,20 +456,20 @@ fn main() -> anyhow::Result<()> {
                         ..
                 } | Event::MouseButtonDown { mouse_btn: sdl2::mouse::MouseButton::Left, .. } | Event::ControllerButtonDown { button: sdl2::controller::Button::A
                     | sdl2::controller::Button::Start
-                    | sdl2::controller::Button::DPadUp
-                    | sdl2::controller::Button::DPadRight
-                    | sdl2::controller::Button::RightShoulder
-                    | sdl2::controller::Button::RightStick, .. } => {
-                        if index != slideshow.len() - 1 {
-                                                        if let TransitionDirection::Forward = transition_direction {
-                                index += 1;
-                                unsafe {
-                                    slideshow.get_unchecked_mut(index).step = 0.0;
-                                }
-                             } else {
-                                transition_direction = TransitionDirection::Forward;
+                        | sdl2::controller::Button::DPadUp
+                        | sdl2::controller::Button::DPadRight
+                        | sdl2::controller::Button::RightShoulder
+                        | sdl2::controller::Button::RightStick, .. } => {
+                            if index != slideshow.len() - 1 {
+                                if let TransitionDirection::Forward = transition_direction {
+                                    index += 1;
+                                    unsafe {
+                                        slideshow.get_unchecked_mut(index).step = 0.0;
+                                    }
+                                } else {
+                                    transition_direction = TransitionDirection::Forward;
 
-                             }
+                                }
                                 drawing = true;
                                 let slide = unsafe { slideshow.get_unchecked(index) };
                                 for i in slide.calls.iter() {
@@ -480,10 +481,10 @@ fn main() -> anyhow::Result<()> {
                                 }
                                 previous_frame_start = frame_start;
                             }
-                    }
+                        }
                 Event::KeyDown { keycode: Some(Keycode::Left)
-                        // Left Shoulder button
-                        | Some(Keycode::K)
+                    // Left Shoulder button
+                    | Some(Keycode::K)
                         // Left D-Pad
                         | Some(Keycode::E)
                         // Down D-Pad
@@ -492,29 +493,29 @@ fn main() -> anyhow::Result<()> {
                         | Some(Keycode::N)
                         // "B" Button
                         | Some(Keycode::J), .. } | Event::MouseButtonDown { mouse_btn: sdl2::mouse::MouseButton::Right, .. } | Event::ControllerButtonDown { button: sdl2::controller::Button::B
-                    | sdl2::controller::Button::Back
-                    | sdl2::controller::Button::DPadDown
-                    | sdl2::controller::Button::DPadLeft
-                    | sdl2::controller::Button::LeftShoulder
-                    | sdl2::controller::Button::LeftStick, .. } => {
-if index != 0 {
-                                                               if let TransitionDirection::Backward = transition_direction {
-                                    index -= 1;
-                                    unsafe {
-                                        slideshow.get_unchecked_mut(index).step = 1.0;
-                                    }
-                                } else {
-                                    transition_direction = TransitionDirection::Backward;
-                                    unsafe {
-                                        slideshow.get_unchecked_mut(index - 1).step = 1.0;
+                            | sdl2::controller::Button::Back
+                                | sdl2::controller::Button::DPadDown
+                                | sdl2::controller::Button::DPadLeft
+                                | sdl2::controller::Button::LeftShoulder
+                                | sdl2::controller::Button::LeftStick, .. } => {
+                                    if index != 0 {
+                                        if let TransitionDirection::Backward = transition_direction {
+                                            index -= 1;
+                                            unsafe {
+                                                slideshow.get_unchecked_mut(index).step = 1.0;
+                                            }
+                                        } else {
+                                            transition_direction = TransitionDirection::Backward;
+                                            unsafe {
+                                                slideshow.get_unchecked_mut(index - 1).step = 1.0;
+                                            }
+                                        }
+                                        drawing = true;
+                                        previous_frame_start = frame_start;
                                     }
                                 }
-                                drawing = true;
-                                previous_frame_start = frame_start;
-                            }
-                    }
                 _ => {}
-                        }
+            }
         }
 
         if drawing {

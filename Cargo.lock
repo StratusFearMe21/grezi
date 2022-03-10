@@ -671,6 +671,7 @@ version = "2.1.0-beta1"
 dependencies = [
  "anyhow",
  "ariadne",
+ "ash",
  "glam 0.20.2",
  "grezi",
  "kira",
