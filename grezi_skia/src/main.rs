@@ -46,8 +46,7 @@ pub enum ObjectType {
         value: *mut [u8],
         max_width: f32,
     },
-    /// Draw a circle to the screen
-    Point,
+    Rect,
     Image {
         img: skulpin::skia_safe::Image,
         dont_resize: bool,
@@ -177,7 +176,7 @@ impl grezi::Object for ObjectType {
                     max_width,
                 })
             }
-            "Point" | "point" | "Circle" | "circle" => Ok(ObjectType::Point),
+            "Rect" | "rect" | "Rectangle" | "rectangle" => Ok(ObjectType::Rect),
             /*
             "Image" | "image" | "Picture" | "picture" => {
             let image = skulpin::skia_safe::Bitmap::new();
@@ -271,7 +270,7 @@ impl grezi::Object for ObjectType {
 
                 Ok(wh)
             }
-            ObjectType::Point => unimplemented!(),
+            ObjectType::Rect => Ok((w, h)),
         }
     }
 }
@@ -697,7 +696,23 @@ if index != 0 {
                             &paint,
                         );
                     }
-                    _ => unimplemented!(),
+                    ObjectType::Rect => {
+                        let mut paint = skulpin::skia_safe::Paint::new(
+                            Color4f::new(1.0, 1.0, 1.0, cmd.obj.parameters.opacity),
+                            None,
+                        );
+                        paint.set_stroke(true);
+                        paint.set_stroke_width(5.0);
+                        canvas.draw_rect(
+                            skulpin::skia_safe::Rect {
+                                left: cmd.obj.parameters.position.x,
+                                top: cmd.obj.parameters.position.y,
+                                right: cmd.obj.parameters.position.z,
+                                bottom: cmd.obj.parameters.position.w,
+                            },
+                            &paint,
+                        );
+                    }
                 }
                 #[cfg(debug_assertions)]
                 {
