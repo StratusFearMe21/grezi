@@ -679,7 +679,7 @@ dependencies = [
  "rayon",
  "ringbuf",
  "sdl2",
- "skulpin 0.14.1",
+ "skulpin 0.14.1 (git+https://github.com/StratusFearMe21/skulpin-sdl2)",
  "structopt",
 ]
 
@@ -1091,16 +1091,6 @@ dependencies = [
 [[package]]
 name = "rafx"
 version = "0.0.14"
-dependencies = [
- "rafx-api 0.0.14",
- "rafx-base 0.0.14",
- "rafx-framework 0.0.14",
- "rafx-visibility 0.0.14",
-]
-
-[[package]]
-name = "rafx"
-version = "0.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b2e69bc36f8ef495c23201b8cb154f196d84b206865758b67b378f37bcfc937"
 dependencies = [
@@ -1111,22 +1101,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "rafx-api"
+name = "rafx"
 version = "0.0.14"
+source = "git+https://github.com/StratusFearMe21/rafx-sdl2#a683e1abea9a9d4245fd07136d499d346178c201"
 dependencies = [
- "ash",
- "bitflags",
- "crossbeam-channel",
- "fnv",
- "gpu-allocator",
- "log",
- "profiling",
- "rafx-base 0.0.14",
- "sdl2",
- "serde",
- "serde_bytes",
- "wasm-bindgen",
- "web-sys",
+ "rafx-api 0.0.14 (git+https://github.com/StratusFearMe21/rafx-sdl2)",
+ "rafx-base 0.0.14 (git+https://github.com/StratusFearMe21/rafx-sdl2)",
+ "rafx-framework 0.0.14 (git+https://github.com/StratusFearMe21/rafx-sdl2)",
+ "rafx-visibility 0.0.14 (git+https://github.com/StratusFearMe21/rafx-sdl2)",
 ]
 
 [[package]]
@@ -1152,14 +1134,23 @@ dependencies = [
 ]
 
 [[package]]
-name = "rafx-base"
+name = "rafx-api"
 version = "0.0.14"
+source = "git+https://github.com/StratusFearMe21/rafx-sdl2#a683e1abea9a9d4245fd07136d499d346178c201"
 dependencies = [
+ "ash",
+ "bitflags",
  "crossbeam-channel",
- "downcast-rs",
  "fnv",
- "instant",
+ "gpu-allocator",
  "log",
+ "profiling",
+ "rafx-base 0.0.14 (git+https://github.com/StratusFearMe21/rafx-sdl2)",
+ "sdl2",
+ "serde",
+ "serde_bytes",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]
@@ -1176,24 +1167,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "rafx-framework"
+name = "rafx-base"
 version = "0.0.14"
+source = "git+https://github.com/StratusFearMe21/rafx-sdl2#a683e1abea9a9d4245fd07136d499d346178c201"
 dependencies = [
- "arrayvec 0.5.2",
- "bitflags",
  "crossbeam-channel",
  "downcast-rs",
  "fnv",
- "glam 0.13.1",
+ "instant",
  "log",
- "parking_lot",
- "profiling",
- "rafx-api 0.0.14",
- "rafx-base 0.0.14",
- "rafx-visibility 0.0.14",
- "serde",
- "serde_bytes",
- "slotmap",
 ]
 
 [[package]]
@@ -1220,8 +1202,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "rafx-framework"
+version = "0.0.14"
+source = "git+https://github.com/StratusFearMe21/rafx-sdl2#a683e1abea9a9d4245fd07136d499d346178c201"
+dependencies = [
+ "arrayvec 0.5.2",
+ "bitflags",
+ "crossbeam-channel",
+ "downcast-rs",
+ "fnv",
+ "glam 0.13.1",
+ "log",
+ "parking_lot",
+ "profiling",
+ "rafx-api 0.0.14 (git+https://github.com/StratusFearMe21/rafx-sdl2)",
+ "rafx-base 0.0.14 (git+https://github.com/StratusFearMe21/rafx-sdl2)",
+ "rafx-visibility 0.0.14 (git+https://github.com/StratusFearMe21/rafx-sdl2)",
+ "serde",
+ "serde_bytes",
+ "slotmap",
+]
+
+[[package]]
 name = "rafx-visibility"
 version = "0.0.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1caa54d71caa79bace6f1923b08010d7c0101da916cbf3c9b63d0f33df223228"
 dependencies = [
  "crossbeam-channel",
  "glam 0.13.1",
@@ -1236,8 +1242,7 @@ dependencies = [
 [[package]]
 name = "rafx-visibility"
 version = "0.0.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1caa54d71caa79bace6f1923b08010d7c0101da916cbf3c9b63d0f33df223228"
+source = "git+https://github.com/StratusFearMe21/rafx-sdl2#a683e1abea9a9d4245fd07136d499d346178c201"
 dependencies = [
  "crossbeam-channel",
  "glam 0.13.1",
@@ -1504,14 +1509,6 @@ dependencies = [
 [[package]]
 name = "skulpin"
 version = "0.14.1"
-dependencies = [
- "log",
- "skulpin-renderer 0.14.1",
-]
-
-[[package]]
-name = "skulpin"
-version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1788de1116cd73c63784ec4f2fcf4bb29cd81a4743ab5c2bcf648f5058da7676"
 dependencies = [
@@ -1520,15 +1517,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "skulpin-renderer"
+name = "skulpin"
 version = "0.14.1"
+source = "git+https://github.com/StratusFearMe21/skulpin-sdl2#061cb21e6cd637ef33204f674bb7607ceae17546"
 dependencies = [
- "bincode",
- "lazy_static",
  "log",
- "rafx 0.0.14",
- "skia-bindings",
- "skia-safe",
+ "skulpin-renderer 0.14.1 (git+https://github.com/StratusFearMe21/skulpin-sdl2)",
 ]
 
 [[package]]
@@ -1541,6 +1535,19 @@ dependencies = [
  "lazy_static",
  "log",
  "rafx 0.0.14 (registry+https://github.com/rust-lang/crates.io-index)",
+ "skia-bindings",
+ "skia-safe",
+]
+
+[[package]]
+name = "skulpin-renderer"
+version = "0.14.1"
+source = "git+https://github.com/StratusFearMe21/skulpin-sdl2#061cb21e6cd637ef33204f674bb7607ceae17546"
+dependencies = [
+ "bincode",
+ "lazy_static",
+ "log",
+ "rafx 0.0.14 (git+https://github.com/StratusFearMe21/rafx-sdl2)",
  "skia-bindings",
  "skia-safe",
 ]

@@ -385,15 +385,15 @@ fn main() -> anyhow::Result<()> {
         top: 0.0,
         bottom: 1080.0,
     };
-    let mut skia = skulpin::RendererBuilder::new()
-        .coordinate_system(skulpin::CoordinateSystem::VisibleRange(
+    let mut skia = skulpin::Renderer::new(
+        &window,
+        extents,
+        skulpin::CoordinateSystem::VisibleRange(
             visible_range,
             skulpin::skia_safe::matrix::ScaleToFit::Center,
-        ))
-        // I am an actual god, FPS is so high that turning this off produces inf FPS.
-        // Thus crashing Vulkan!
-        .vsync_enabled(true)
-        .build(&window, extents)?;
+        ),
+        true,
+    )?;
     let mut index = 0;
     let mut drawing = true;
     #[cfg(debug_assertions)]
