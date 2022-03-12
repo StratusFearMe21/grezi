@@ -289,6 +289,7 @@ fn main() -> anyhow::Result<()> {
         .window("Grezi", 960, 640)
         .allow_highdpi()
         .resizable()
+        .vulkan()
         .build()?;
 
     let window_size = window.vulkan_drawable_size();

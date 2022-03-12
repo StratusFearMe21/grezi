@@ -662,7 +662,7 @@ dependencies = [
  "grezi",
  "memmap",
  "sdl2",
- "skulpin",
+ "skulpin 0.14.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -679,7 +679,7 @@ dependencies = [
  "rayon",
  "ringbuf",
  "sdl2",
- "skulpin",
+ "skulpin 0.14.1",
  "structopt",
 ]
 
@@ -1091,13 +1091,42 @@ dependencies = [
 [[package]]
 name = "rafx"
 version = "0.0.14"
+dependencies = [
+ "rafx-api 0.0.14",
+ "rafx-base 0.0.14",
+ "rafx-framework 0.0.14",
+ "rafx-visibility 0.0.14",
+]
+
+[[package]]
+name = "rafx"
+version = "0.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b2e69bc36f8ef495c23201b8cb154f196d84b206865758b67b378f37bcfc937"
 dependencies = [
- "rafx-api",
- "rafx-base",
- "rafx-framework",
- "rafx-visibility",
+ "rafx-api 0.0.14 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rafx-base 0.0.14 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rafx-framework 0.0.14 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rafx-visibility 0.0.14 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "rafx-api"
+version = "0.0.14"
+dependencies = [
+ "ash",
+ "bitflags",
+ "crossbeam-channel",
+ "fnv",
+ "gpu-allocator",
+ "log",
+ "profiling",
+ "rafx-base 0.0.14",
+ "sdl2",
+ "serde",
+ "serde_bytes",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]
@@ -1114,12 +1143,23 @@ dependencies = [
  "gpu-allocator",
  "log",
  "profiling",
- "rafx-base",
+ "rafx-base 0.0.14 (registry+https://github.com/rust-lang/crates.io-index)",
  "raw-window-handle 0.3.4",
  "serde",
  "serde_bytes",
  "wasm-bindgen",
  "web-sys",
+]
+
+[[package]]
+name = "rafx-base"
+version = "0.0.14"
+dependencies = [
+ "crossbeam-channel",
+ "downcast-rs",
+ "fnv",
+ "instant",
+ "log",
 ]
 
 [[package]]
@@ -1138,6 +1178,27 @@ dependencies = [
 [[package]]
 name = "rafx-framework"
 version = "0.0.14"
+dependencies = [
+ "arrayvec 0.5.2",
+ "bitflags",
+ "crossbeam-channel",
+ "downcast-rs",
+ "fnv",
+ "glam 0.13.1",
+ "log",
+ "parking_lot",
+ "profiling",
+ "rafx-api 0.0.14",
+ "rafx-base 0.0.14",
+ "rafx-visibility 0.0.14",
+ "serde",
+ "serde_bytes",
+ "slotmap",
+]
+
+[[package]]
+name = "rafx-framework"
+version = "0.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5acf8d3b0f4bccb27f1a7decb72d7a6a372d262b7c6dfda7a6cd30877ec1f746"
 dependencies = [
@@ -1150,11 +1211,25 @@ dependencies = [
  "log",
  "parking_lot",
  "profiling",
- "rafx-api",
- "rafx-base",
- "rafx-visibility",
+ "rafx-api 0.0.14 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rafx-base 0.0.14 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rafx-visibility 0.0.14 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde",
  "serde_bytes",
+ "slotmap",
+]
+
+[[package]]
+name = "rafx-visibility"
+version = "0.0.14"
+dependencies = [
+ "crossbeam-channel",
+ "glam 0.13.1",
+ "log",
+ "parking_lot",
+ "profiling",
+ "rustc-hash",
+ "serde",
  "slotmap",
 ]
 
@@ -1429,11 +1504,31 @@ dependencies = [
 [[package]]
 name = "skulpin"
 version = "0.14.1"
+dependencies = [
+ "log",
+ "skulpin-renderer 0.14.1",
+]
+
+[[package]]
+name = "skulpin"
+version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1788de1116cd73c63784ec4f2fcf4bb29cd81a4743ab5c2bcf648f5058da7676"
 dependencies = [
  "log",
- "skulpin-renderer",
+ "skulpin-renderer 0.14.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "skulpin-renderer"
+version = "0.14.1"
+dependencies = [
+ "bincode",
+ "lazy_static",
+ "log",
+ "rafx 0.0.14",
+ "skia-bindings",
+ "skia-safe",
 ]
 
 [[package]]
@@ -1445,7 +1540,7 @@ dependencies = [
  "bincode",
  "lazy_static",
  "log",
- "rafx",
+ "rafx 0.0.14 (registry+https://github.com/rust-lang/crates.io-index)",
  "skia-bindings",
  "skia-safe",
 ]
