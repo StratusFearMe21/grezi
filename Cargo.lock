@@ -644,7 +644,7 @@ dependencies = [
 
 [[package]]
 name = "grezi"
-version = "2.1.0-beta1"
+version = "2.1.0"
 dependencies = [
  "ahash 0.7.6",
  "cassowary",
@@ -667,7 +667,7 @@ dependencies = [
 
 [[package]]
 name = "grezi_skia"
-version = "2.1.0-beta1"
+version = "2.1.0"
 dependencies = [
  "anyhow",
  "ariadne",
@@ -685,7 +685,7 @@ dependencies = [
 
 [[package]]
 name = "grzfmt"
-version = "2.1.0-beta1"
+version = "2.1.0"
 dependencies = [
  "clap 3.1.6",
  "grezi",
