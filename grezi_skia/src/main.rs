@@ -1,4 +1,9 @@
-use std::{borrow::Cow, mem::MaybeUninit, path::PathBuf, time::Instant};
+use std::{
+    borrow::Cow,
+    mem::MaybeUninit,
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
 use anyhow::{bail, Context};
 use ariadne::Label;
@@ -6,9 +11,14 @@ use audio::{Sdl2Backend, Sdl2Settings};
 use grezi::{layout::Rect, AHashMap, Functions, Slide};
 use kira::{
     manager::{AudioManager, AudioManagerSettings},
-    sound::static_sound::{StaticSoundData, StaticSoundSettings},
+    sound::{
+        static_sound::{StaticSoundData, StaticSoundHandle, StaticSoundSettings},
+        SoundData,
+    },
     track::TrackBuilder,
+    tween::Tween,
 };
+use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use sdl2::{
     event::{Event, WindowEvent},
     keyboard::Keycode,
@@ -364,6 +374,7 @@ fn main() -> anyhow::Result<()> {
         main_track_builder: TrackBuilder::default(),
     })
     .unwrap();
+    let mut sound_vec: Vec<StaticSoundHandle> = Vec::with_capacity(2);
 
     let video_ctx = sdl_ctx.video().map_err(|e| anyhow::anyhow!(e))?;
     let window = video_ctx
@@ -406,10 +417,25 @@ fn main() -> anyhow::Result<()> {
     let mut previous_frame_start = Instant::now();
     let slide = unsafe { slideshow.get_unchecked(index) };
     let mut transition_direction = TransitionDirection::Forward;
+    sound_vec.par_iter_mut().try_for_each(|f| {
+        f.stop(Tween {
+            start_time: kira::StartTime::Immediate,
+            easing: kira::tween::Easing::Linear,
+            duration: Duration::from_secs(2),
+        })
+    })?;
+    slide.calls.iter().try_for_each(|i| match i {
+        SkiaFunctions::Play(handle) => {
+            sound_vec.push(kira_ctx.play(handle.clone())?);
+            Ok::<(), kira::manager::error::PlaySoundError<<StaticSoundData as SoundData>::Error>>(
+                (),
+            )
+        }
+    })?;
     for i in slide.calls.iter() {
         match i {
             SkiaFunctions::Play(handle) => {
-                kira_ctx.play(handle.clone())?;
+                sound_vec.push(kira_ctx.play(handle.clone())?);
             }
         }
     }

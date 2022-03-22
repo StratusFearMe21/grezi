@@ -9,6 +9,11 @@ pub struct Sdl2Backend {
     device: Option<AudioDevice<Sdl2Player>>,
 }
 
+unsafe impl Sync for Sdl2Player {}
+unsafe impl Send for Sdl2Player {}
+unsafe impl Sync for Sdl2Backend {}
+unsafe impl Send for Sdl2Backend {}
+
 struct Sdl2Player {
     renderer: Renderer,
     spec: AudioSpec,

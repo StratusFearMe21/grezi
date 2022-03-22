@@ -70,7 +70,7 @@ fn main() -> Result<(), std::io::Error> {
                     } else {
                         writer.write_all(b"}[\n")?;
                         for j in arg.1 {
-                            writer.write_fmt(format_args!("\t{}({})\n", j.0, j.1))?;
+                            writer.write_fmt(format_args!("\t{}({}),\n", j.0, j.1))?;
                         }
                         writer.write_all(b"];")?;
                     }
